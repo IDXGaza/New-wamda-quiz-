@@ -1,10 +1,10 @@
 {
-  "projectId": "remixed-project-id",
-  "appId": "remixed-app-id",
-  "apiKey": "remixed-api-key",
-  "authDomain": "remixed-auth-domain",
-  "firestoreDatabaseId": "remixed-firestore-database-id",
-  "storageBucket": "remixed-storage-bucket",
-  "messagingSenderId": "remixed-messaging-sender-id",
-  "measurementId": "remixed-measurement-id"
+  "apiKey": "AIzaSyDEl0FlaM1pZ-iXTyjZUVw0N1gHNbxXfFE",
+  "authDomain": "new-wamda-quizy-app.firebaseapp.com",
+  "databaseURL": "https://new-wamda-quizy-app-default-rtdb.asia-southeast1.firebasedatabase.app",
+  "projectId": "new-wamda-quizy-app",
+  "storageBucket": "new-wamda-quizy-app.firebasestorage.app",
+  "messagingSenderId": "982724181522",
+  "appId": "1:982724181522:web:f95bc872e118730157e2cb",
+  "measurementId": "G-03RE36ZRFJ"
 }

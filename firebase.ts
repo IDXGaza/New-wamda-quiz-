@@ -8,12 +8,8 @@ import firebaseConfig from './firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use default database if the ID is the placeholder one
-const dbId = firebaseConfig.firestoreDatabaseId === 'remixed-firestore-database-id' 
-  ? undefined 
-  : firebaseConfig.firestoreDatabaseId;
-
-export const db = dbId ? getFirestore(app, dbId) : getFirestore(app);
+// Use default database
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
