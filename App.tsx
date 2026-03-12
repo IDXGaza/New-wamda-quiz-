@@ -5,11 +5,32 @@ import Sidebar from './components/Sidebar';
 import Player from './components/Player';
 import TimestampManager from './components/TimestampManager';
 import AuthModal from './components/AuthModal';
-import { auth, db, storage, logout } from './firebase';
+import { auth, db, logout } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import firebaseConfig from './firebase-applet-config.json';
+
+const CLOUDINARY_CLOUD_NAME = "s4ipx1wf";
+const CLOUDINARY_UPLOAD_PRESET = "dt59bwxwc";
+
+const uploadToCloudinary = async (file: File | Blob): Promise<string> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || 'Failed to upload to Cloudinary');
+  }
+  
+  const data = await response.json();
+  return data.secure_url;
+};
 
 const UNIFORM_PLACEHOLDER = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&h=600&auto=format&fit=crop";
 
@@ -185,15 +206,11 @@ const App: React.FC = () => {
         // Only sync if not already synced
         if (!track.audioUrl && track.fileBlob) {
           const id = track.id;
-          const audioRef = ref(storage, `users/${currentUser.uid}/tracks/${id}/audio`);
-          const snapshot = await uploadBytes(audioRef, track.fileBlob);
-          const audioUrl = await getDownloadURL(snapshot.ref);
+          const audioUrl = await uploadToCloudinary(track.fileBlob);
           
           let coverStorageUrl = track.coverStorageUrl;
           if (track.coverBlob) {
-            const coverRef = ref(storage, `users/${currentUser.uid}/tracks/${id}/cover`);
-            const cSnapshot = await uploadBytes(coverRef, track.coverBlob);
-            coverStorageUrl = await getDownloadURL(cSnapshot.ref);
+            coverStorageUrl = await uploadToCloudinary(track.coverBlob);
           }
 
           const { fileBlob, coverBlob, ...metadata } = track;
@@ -431,12 +448,13 @@ const App: React.FC = () => {
     if (file && currentTrack) {
       let coverStorageUrl = currentTrack.coverStorageUrl;
       if (user) {
+        setIsSyncing(true);
         try {
-          const coverRef = ref(storage, `users/${user.uid}/tracks/${currentTrack.id}/cover`);
-          const snapshot = await uploadBytes(coverRef, file);
-          coverStorageUrl = await getDownloadURL(snapshot.ref);
+          coverStorageUrl = await uploadToCloudinary(file);
         } catch (error) {
           console.error("Failed to upload cover to cloud:", error);
+        } finally {
+          setIsSyncing(false);
         }
       }
 
@@ -514,10 +532,9 @@ const App: React.FC = () => {
 
     // Save to Cloud if logged in
     if (user) {
+      setIsSyncing(true);
       try {
-        const audioRef = ref(storage, `users/${user.uid}/tracks/${id}/audio`);
-        const snapshot = await uploadBytes(audioRef, file);
-        const audioUrl = await getDownloadURL(snapshot.ref);
+        const audioUrl = await uploadToCloudinary(file);
         
         const cloudTrack = { ...newTrack, audioUrl, userId: user.uid };
         // Remove blobs before saving to Firestore
@@ -525,6 +542,8 @@ const App: React.FC = () => {
         await setDoc(doc(db, `users/${user.uid}/tracks`, id), metadata);
       } catch (error) {
         console.error("Failed to sync track to cloud:", error);
+      } finally {
+        setIsSyncing(false);
       }
     }
   };
@@ -539,9 +558,8 @@ const App: React.FC = () => {
     if (user) {
       try {
         await deleteDoc(doc(db, `users/${user.uid}/tracks`, id));
-        // Also delete from storage
-        const audioRef = ref(storage, `users/${user.uid}/tracks/${id}/audio`);
-        await deleteObject(audioRef).catch(() => {});
+        // Note: Cloudinary unsigned uploads cannot be easily deleted from the client.
+        // We just remove the reference from Firestore.
       } catch (error) {
         console.error("Failed to delete track from cloud:", error);
       }
