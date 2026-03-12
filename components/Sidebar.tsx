@@ -83,17 +83,17 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <div className="block w-full">
+          <div className="block w-full relative">
             <div className="relative w-full bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-bold py-4 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-3 overflow-hidden text-sm active:scale-[0.98] cursor-pointer">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
               <span>استيراد لحن</span>
-              <input 
-                type="file" 
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-50" 
-                accept="audio/*" 
-                onChange={handleFileChange} 
-              />
             </div>
+            <input 
+              type="file" 
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-50" 
+              accept="audio/*" 
+              onChange={handleFileChange} 
+            />
           </div>
 
           <div className="relative group">
