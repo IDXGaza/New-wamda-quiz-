@@ -309,81 +309,16 @@ const App: React.FC = () => {
     };
   }, [user]);
 
-  useEffect(() => {
-    if ('mediaSession' in navigator && currentTrack) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.name,
-        artist: currentTrack.artist || 'ترانيم',
-        album: 'مكتبتي',
-        artwork: [{ src: currentTrack.coverUrl, sizes: '512x512', type: 'image/png' }]
-      });
-
-      navigator.mediaSession.setActionHandler('play', handlePlayPause);
-      navigator.mediaSession.setActionHandler('pause', handlePlayPause);
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
-        if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
-        else if (currentTrackIndex === 0) handleSelectTrack(tracks.length - 1);
-      });
-      navigator.mediaSession.setActionHandler('nexttrack', handleSkipToNext);
-    }
-  }, [currentTrack, currentTrackIndex, tracks.length]);
+  const handleSelectTrack = (index: number) => {
+    setCurrentTrackIndex(index);
+    setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
+  };
 
   const handleSkipToNext = () => {
     if (currentTrackIndex !== null && tracks.length > 0) {
       const nextIndex = (currentTrackIndex + 1) % tracks.length;
       handleSelectTrack(nextIndex);
     }
-  };
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const updateTime = () => setPlayerState(prev => ({ ...prev, currentTime: audio.currentTime }));
-    const onEnded = () => playerState.isLooping ? (audio.currentTime = 0, audio.play().catch(() => {})) : handleSkipToNext();
-    const onWaiting = () => setPlayerState(prev => ({ ...prev, isLoading: true }));
-    const onPlaying = () => setPlayerState(prev => ({ ...prev, isLoading: false }));
-    
-    const onCanPlay = () => {
-      setLoadError(null);
-      setPlayerState(prev => ({ ...prev, isLoading: false }));
-      if (playerState.isPlaying) audio.play().catch(() => {});
-    };
-
-    const onLoadedMetadata = () => {
-      if (audio && currentTrackIndex !== null) {
-        setTracks(prev => prev.map((t, idx) => idx === currentTrackIndex ? { ...t, duration: audio.duration } : t));
-        audio.playbackRate = playerState.playbackRate;
-      }
-    };
-
-    const onError = () => {
-      setLoadError("فشل تشغيل المقطع.");
-      setPlayerState(prev => ({ ...prev, isPlaying: false, isLoading: false }));
-    };
-
-    audio.addEventListener('timeupdate', updateTime);
-    audio.addEventListener('ended', onEnded);
-    audio.addEventListener('waiting', onWaiting);
-    audio.addEventListener('playing', onPlaying);
-    audio.addEventListener('canplay', onCanPlay);
-    audio.addEventListener('loadedmetadata', onLoadedMetadata);
-    audio.addEventListener('error', onError);
-
-    return () => {
-      audio.removeEventListener('timeupdate', updateTime);
-      audio.removeEventListener('ended', onEnded);
-      audio.removeEventListener('waiting', onWaiting);
-      audio.removeEventListener('playing', onPlaying);
-      audio.removeEventListener('canplay', onCanPlay);
-      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
-      audio.removeEventListener('error', onError);
-    };
-  }, [currentTrackIndex, playerState.playbackRate, playerState.isLooping, tracks.length, playerState.isPlaying]);
-
-  const handleSelectTrack = (index: number) => {
-    setCurrentTrackIndex(index);
-    setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
   };
 
   const handlePlayPause = () => {
@@ -411,11 +346,126 @@ const App: React.FC = () => {
   const handleSkip = (seconds: number) => {
     const audio = audioRef.current;
     if (audio) {
-      const newTime = audio.currentTime + seconds;
+      const newTime = Math.max(0, Math.min(audio.currentTime + seconds, audio.duration || 0));
       audio.currentTime = newTime;
       setPlayerState(prev => ({ ...prev, currentTime: newTime }));
     }
   };
+
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentTrack) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.name,
+        artist: currentTrack.artist || 'ترانيم',
+        album: 'مكتبتي',
+        artwork: [{ src: currentTrack.coverUrl, sizes: '512x512', type: 'image/png' }]
+      });
+
+      navigator.mediaSession.setActionHandler('play', handlePlayPause);
+      navigator.mediaSession.setActionHandler('pause', handlePlayPause);
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
+        else if (currentTrackIndex === 0) handleSelectTrack(tracks.length - 1);
+      });
+      navigator.mediaSession.setActionHandler('nexttrack', handleSkipToNext);
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.fastSeek && audioRef.current && 'fastSeek' in audioRef.current) {
+          (audioRef.current as any).fastSeek(details.seekTime || 0);
+          return;
+        }
+        handleSeek(details.seekTime || 0);
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        handleSkip(-(details.seekOffset || 10));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        handleSkip(details.seekOffset || 10);
+      });
+    }
+  }, [currentTrack, currentTrackIndex, tracks.length, playerState.isPlaying]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateMediaSessionPosition = () => {
+      if ('mediaSession' in navigator && audio && !isNaN(audio.duration)) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: audio.duration,
+            playbackRate: audio.playbackRate,
+            position: audio.currentTime
+          });
+        } catch (e) {
+          // Ignore errors if position is out of bounds
+        }
+      }
+    };
+
+    const updateTime = () => setPlayerState(prev => ({ ...prev, currentTime: audio.currentTime }));
+    const onEnded = () => playerState.isLooping ? (audio.currentTime = 0, audio.play().catch(() => {})) : handleSkipToNext();
+    const onWaiting = () => setPlayerState(prev => ({ ...prev, isLoading: true }));
+    
+    const onPlaying = () => {
+      setPlayerState(prev => ({ ...prev, isLoading: false }));
+      updateMediaSessionPosition();
+    };
+    
+    const onPause = () => {
+      updateMediaSessionPosition();
+    };
+
+    const onSeeked = () => {
+      updateMediaSessionPosition();
+    };
+
+    const onRateChange = () => {
+      updateMediaSessionPosition();
+    };
+    
+    const onCanPlay = () => {
+      setLoadError(null);
+      setPlayerState(prev => ({ ...prev, isLoading: false }));
+      if (playerState.isPlaying) audio.play().catch(() => {});
+    };
+
+    const onLoadedMetadata = () => {
+      if (audio && currentTrackIndex !== null) {
+        setTracks(prev => prev.map((t, idx) => idx === currentTrackIndex ? { ...t, duration: audio.duration } : t));
+        audio.playbackRate = playerState.playbackRate;
+        updateMediaSessionPosition();
+      }
+    };
+
+    const onError = () => {
+      setLoadError("فشل تشغيل المقطع.");
+      setPlayerState(prev => ({ ...prev, isPlaying: false, isLoading: false }));
+    };
+
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('waiting', onWaiting);
+    audio.addEventListener('playing', onPlaying);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('seeked', onSeeked);
+    audio.addEventListener('ratechange', onRateChange);
+    audio.addEventListener('canplay', onCanPlay);
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('error', onError);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('waiting', onWaiting);
+      audio.removeEventListener('playing', onPlaying);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('seeked', onSeeked);
+      audio.removeEventListener('ratechange', onRateChange);
+      audio.removeEventListener('canplay', onCanPlay);
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('error', onError);
+    };
+  }, [currentTrackIndex, playerState.playbackRate, playerState.isLooping, tracks.length, playerState.isPlaying]);
 
   const handleToggleLoop = () => setPlayerState(prev => ({ ...prev, isLooping: !prev.isLooping }));
   const handleRateChange = (rate: number) => {
