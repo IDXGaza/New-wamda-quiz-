@@ -35,20 +35,20 @@ const TimestampManager: React.FC<TimestampManagerProps> = ({
           [...timestamps].sort((a, b) => a.time - b.time).map((ts, index) => (
             <div 
               key={ts.id} 
-              className="flex items-center gap-4 p-4 bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-800 rounded-[24px] border border-white dark:border-slate-800 transition-all shadow-sm hover:shadow-md group"
+              onClick={() => onSeek(ts.time)}
+              className="flex items-center gap-4 p-4 bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-800 rounded-[24px] border border-white dark:border-slate-800 transition-all shadow-sm hover:shadow-md group cursor-pointer"
             >
               <div className="w-8 h-8 flex items-center justify-center bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-300 dark:text-slate-600 font-black text-sm">
                 {toArabicIndic(index + 1)}
               </div>
 
-              <button 
-                onClick={() => onSeek(ts.time)}
-                className="text-lg md:text-xl font-black text-[#4da8ab] tabular-nums hover:scale-110 transition-transform px-2"
+              <div 
+                className="text-lg md:text-xl font-black text-[#4da8ab] tabular-nums group-hover:scale-110 transition-transform px-2"
                 style={{ direction: 'ltr' }}
               >
                 {toArabicIndic(Math.floor(ts.time / 60)).padStart(2, '٠')}:
                 {toArabicIndic(Math.floor(ts.time % 60)).padStart(2, '٠')}
-              </button>
+              </div>
 
               <div className="flex-1 min-w-0 text-right">
                 <p className="text-xs md:text-sm font-bold text-slate-600 dark:text-slate-300 truncate">{ts.label}</p>
@@ -56,7 +56,10 @@ const TimestampManager: React.FC<TimestampManagerProps> = ({
 
               <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                 <button 
-                  onClick={() => onRemove(ts.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(ts.id);
+                  }}
                   className="p-2 text-slate-300 dark:text-slate-600 hover:text-rose-500 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
