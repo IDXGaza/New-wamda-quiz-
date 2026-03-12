@@ -10,8 +10,8 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import firebaseConfig from './firebase-applet-config.json';
 
-const CLOUDINARY_CLOUD_NAME = "s4ipx1wf";
-const CLOUDINARY_UPLOAD_PRESET = "dt59bwxwc";
+const CLOUDINARY_CLOUD_NAME = "dt59bwxwc";
+const CLOUDINARY_UPLOAD_PRESET = "s4ipx1wf";
 
 const uploadToCloudinary = async (file: File | Blob): Promise<string> => {
   const formData = new FormData();
