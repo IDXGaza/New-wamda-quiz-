@@ -200,31 +200,41 @@ const App: React.FC = () => {
 
   const syncLocalToCloud = async (currentUser: User) => {
     setIsSyncing(true);
+    let hasError = false;
     try {
       const localTracks = await getAllTracksFromDB();
       for (const track of localTracks) {
         // Only sync if not already synced
         if (!track.audioUrl && track.fileBlob) {
-          const id = track.id;
-          const audioUrl = await uploadToCloudinary(track.fileBlob);
-          
-          let coverStorageUrl = track.coverStorageUrl;
-          if (track.coverBlob) {
-            coverStorageUrl = await uploadToCloudinary(track.coverBlob);
-          }
+          try {
+            const id = track.id;
+            const audioUrl = await uploadToCloudinary(track.fileBlob);
+            
+            let coverStorageUrl = track.coverStorageUrl;
+            if (track.coverBlob) {
+              coverStorageUrl = await uploadToCloudinary(track.coverBlob);
+            }
 
-          const { fileBlob, coverBlob, ...metadata } = track;
-          const cloudTrack = { ...metadata, audioUrl, coverStorageUrl, userId: currentUser.uid };
-          await setDoc(doc(db, `users/${currentUser.uid}/tracks`, id), cloudTrack);
-          
-          // Update local DB to mark as synced
-          await saveTrackToDB({ ...track, audioUrl, coverStorageUrl });
+            const { fileBlob, coverBlob, ...metadata } = track;
+            const cloudTrack = { ...metadata, audioUrl, coverStorageUrl, userId: currentUser.uid };
+            await setDoc(doc(db, `users/${currentUser.uid}/tracks`, id), cloudTrack);
+            
+            // Update local DB to mark as synced
+            await saveTrackToDB({ ...track, audioUrl, coverStorageUrl });
+          } catch (err) {
+            console.error("Failed to sync track:", track.name, err);
+            hasError = true;
+          }
         }
       }
     } catch (error) {
       console.error("Auto-sync error:", error);
+      hasError = true;
     } finally {
       setIsSyncing(false);
+      if (hasError) {
+        alert("حدث خطأ أثناء رفع بعض الأناشيد للسحابة. تأكد من اتصالك بالإنترنت وأن حجم الملف ليس كبيراً جداً.");
+      }
     }
   };
 
@@ -262,7 +272,7 @@ const App: React.FC = () => {
 
     // Load from Firestore if logged in
     const q = query(collection(db, `users/${user.uid}/tracks`), orderBy('order'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const cloudTracks = snapshot.docs.map(doc => {
         const data = doc.data() as Track;
         return {
@@ -271,8 +281,25 @@ const App: React.FC = () => {
           coverUrl: data.coverStorageUrl || data.coverUrl || UNIFORM_PLACEHOLDER
         };
       });
-      setTracks(cloudTracks);
-      if (cloudTracks.length > 0 && currentTrackIndex === null) setCurrentTrackIndex(0);
+
+      // Also get local tracks that might not be synced yet
+      try {
+        const localTracks = await getAllTracksFromDB();
+        const localUnsynced = localTracks.filter(lt => !cloudTracks.find(ct => ct.id === lt.id));
+        
+        const mergedTracks = [...cloudTracks, ...localUnsynced.map(t => ({
+          ...t,
+          url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+          coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+        }))].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+        setTracks(mergedTracks);
+        if (mergedTracks.length > 0 && currentTrackIndex === null) setCurrentTrackIndex(0);
+      } catch (e) {
+        console.error("Failed to merge local tracks", e);
+        setTracks(cloudTracks);
+        if (cloudTracks.length > 0 && currentTrackIndex === null) setCurrentTrackIndex(0);
+      }
     }, (error) => {
       console.error("Firestore sync error:", error);
     });
@@ -540,11 +567,17 @@ const App: React.FC = () => {
         // Remove blobs before saving to Firestore
         const { fileBlob, coverBlob, ...metadata } = cloudTrack;
         await setDoc(doc(db, `users/${user.uid}/tracks`, id), metadata);
+        
+        // Update local DB with the new audioUrl so it doesn't try to sync again
+        await saveTrackToDB({ ...newTrack, audioUrl });
       } catch (error) {
         console.error("Failed to sync track to cloud:", error);
+        alert("فشل رفع الأنشودة للسحابة. سيتم حفظها في جهازك فقط. تأكد من اتصالك بالإنترنت.");
       } finally {
         setIsSyncing(false);
       }
+    } else {
+      alert("أنت غير مسجل الدخول! تم حفظ الأنشودة في جهازك فقط، ولن تكون موجودة إذا حذفت التطبيق.");
     }
   };
 
