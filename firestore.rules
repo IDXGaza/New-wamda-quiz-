@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: rooms
+    // Document ID: {roomId}
+    // Fields:
+    //   - hostId: string (required) - The UID of the host.
+    //   - gameState: string (required) - 'waiting', 'playing', 'question', 'revealed'
+    //   - buzzedPlayerId: string | null (optional) - The ID of the player who buzzed first.
+    //   - buzzedAt: string | null (optional) - ISO date string of when the player buzzed.
+    //   - createdAt: string (required) - ISO date string of when the room was created.
+    //
+    // Collection: rooms/{roomId}/players
+    // Document ID: {playerId}
+    // Fields:
+    //   - name: string (required) - The player's display name.
+    //   - color: string (required) - The player's avatar color.
+    //   - score: number (required) - The player's current score.
+    //   - joinedAt: string (required) - ISO date string of when the player joined.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "abbas20jat@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isRoomHost(roomId) {
+      return isAuthenticated() && resource.data.hostId == request.auth.uid;
+    }
+
+    function isCreatingRoom() {
+      return request.resource.data.hostId == request.auth.uid;
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedRoomFields() {
+      return request.resource.data.keys().hasOnly(['hostId', 'gameState', 'buzzedPlayerId', 'buzzedAt', 'createdAt']);
+    }
+
+    function hasRequiredRoomFields() {
+      return request.resource.data.keys().hasAll(['hostId', 'gameState', 'createdAt']);
+    }
+
+    function isValidRoom() {
+      return hasOnlyAllowedRoomFields() &&
+             hasRequiredRoomFields() &&
+             request.resource.data.hostId is string && request.resource.data.hostId.size() < 128 &&
+             request.resource.data.gameState in ['waiting', 'playing', 'question', 'revealed'] &&
+             isValidDateString(request.resource.data.createdAt) &&
+             (!('buzzedPlayerId' in request.resource.data) || request.resource.data.buzzedPlayerId == null || (request.resource.data.buzzedPlayerId is string && request.resource.data.buzzedPlayerId.size() < 128)) &&
+             (!('buzzedAt' in request.resource.data) || request.resource.data.buzzedAt == null || isValidDateString(request.resource.data.buzzedAt));
+    }
+
+    function hasOnlyAllowedPlayerFields() {
+      return request.resource.data.keys().hasOnly(['name', 'color', 'score', 'joinedAt']);
+    }
+
+    function hasRequiredPlayerFields() {
+      return request.resource.data.keys().hasAll(['name', 'color', 'score', 'joinedAt']);
+    }
+
+    function isValidPlayer() {
+      return hasOnlyAllowedPlayerFields() &&
+             hasRequiredPlayerFields() &&
+             request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 50 &&
+             request.resource.data.color is string && request.resource.data.color.size() <= 30 &&
+             request.resource.data.score is number &&
+             isValidDateString(request.resource.data.joinedAt);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == userId && 
+                    request.resource.data.keys().hasOnly(['name', 'email', 'role', 'createdAt']) &&
+                    request.resource.data.role == 'user';
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == userId && request.resource.data.role == resource.data.role) || 
+        isAdmin()
+      );
+    }
+
+    match /rooms/{roomId} {
+      // Anyone authenticated can read the room state
+      allow read: if isAuthenticated();
+      
+      // Only the host can create their room
+      allow create: if isAuthenticated() && isCreatingRoom() && isValidRoom();
+      
+      // Host can update anything. Players can ONLY update buzzedPlayerId and buzzedAt if it's currently null.
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (resource.data.hostId == request.auth.uid && isValidRoom() && request.resource.data.hostId == resource.data.hostId && request.resource.data.createdAt == resource.data.createdAt) ||
+        (
+          isValidRoom() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['buzzedPlayerId', 'buzzedAt']) &&
+          resource.data.buzzedPlayerId == null &&
+          request.resource.data.buzzedPlayerId == request.auth.uid &&
+          request.resource.data.hostId == resource.data.hostId &&
+          request.resource.data.gameState == resource.data.gameState &&
+          request.resource.data.createdAt == resource.data.createdAt
+        )
+      );
+      
+      allow delete: if isRoomHost(roomId) || isAdmin();
+
+      match /players/{playerId} {
+        // Anyone authenticated can read players in a room
+        allow read: if isAuthenticated();
+        
+        // A player can join the room (create their own doc)
+        allow create: if isAuthenticated() && playerId == request.auth.uid && isValidPlayer();
+        
+        // Player can update their own doc, or the host can update it (e.g., to change score)
+        allow update: if isAuthenticated() && isValidPlayer() && (
+          isAdmin() ||
+          playerId == request.auth.uid ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid
+        );
+        
+        // Player can leave, or host can kick
+        allow delete: if isAuthenticated() && (
+          isAdmin() ||
+          playerId == request.auth.uid ||
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid
+        );
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "A game room hosted by a user.",
+      "type": "object",
+      "properties": {
+        "hostId": { "type": "string", "description": "The UID of the host." },
+        "gameState": { "type": "string", "enum": ["waiting", "playing", "question", "revealed"], "description": "Current state of the game." },
+        "buzzedPlayerId": { "type": ["string", "null"], "description": "The ID of the player who buzzed first." },
+        "buzzedAt": { "type": ["string", "null"], "format": "date-time", "description": "When the player buzzed." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the room was created." }
+      },
+      "required": ["hostId", "gameState", "createdAt"]
+    },
+    "Player": {
+      "title": "Player",
+      "description": "A player in a game room.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The player's display name." },
+        "color": { "type": "string", "description": "The player's avatar color." },
+        "score": { "type": "number", "description": "The player's current score." },
+        "joinedAt": { "type": "string", "format": "date-time", "description": "When the player joined." }
+      },
+      "required": ["name", "color", "score", "joinedAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A registered user of the application.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The user's display name." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "The user's role." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." }
+      },
+      "required": ["name", "email", "role", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Stores game rooms."
+    },
+    "rooms/{roomId}/players/{playerId}": {
+      "schema": { "$ref": "#/entities/Player" },
+      "description": "Stores players within a specific game room."
+    }
+  }
+}
