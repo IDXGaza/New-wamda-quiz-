@@ -55,25 +55,48 @@ const App: React.FC = () => {
       }
     };
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        signInAnonymously(auth).catch((error: any) => {
-          if (error.code === 'auth/admin-restricted-operation') {
-            setAuthError("عذراً، ميزة اللعب عن بُعد (Remote Buzzer) معطلة لأن 'Anonymous Authentication' غير مفعل في Firebase.");
-          } else {
-            console.error("Auth Error:", error);
-            setAuthError(error.message);
-          }
+    const handleAuth = () => {
+      setAuthError(null);
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          signInAnonymously(auth).catch((error: any) => {
+            if (error.code === 'auth/admin-restricted-operation') {
+              setAuthError("عذراً، ميزة اللعب عن بُعد (Remote Buzzer) معطلة لأن 'Anonymous Authentication' غير مفعل في Firebase.");
+            } else if (error.code === 'auth/network-request-failed') {
+              setAuthError("فشل الاتصال بخوادم التحقق. يرجى التأكد من اتصالك بالإنترنت أو عدم وجود جدار حماية يمنع الاتصال.");
+            } else {
+              console.error("Auth Error:", error);
+              setAuthError(error.message);
+            }
+            setIsAuthReady(true);
+          });
+        } else {
           setIsAuthReady(true);
-        });
-      } else {
-        setIsAuthReady(true);
-        setAuthError(null);
-        testFirestore();
-      }
-    });
+          setAuthError(null);
+          testFirestore();
+        }
+      });
+      return unsubscribe;
+    };
+
+    const unsubscribe = handleAuth();
     return () => unsubscribe();
   }, []);
+
+  const handleRetryAuth = () => {
+    setIsAuthReady(false);
+    setAuthError(null);
+    signInAnonymously(auth).catch((error: any) => {
+      if (error.code === 'auth/admin-restricted-operation') {
+        setAuthError("عذراً، ميزة اللعب عن بُعد (Remote Buzzer) معطلة لأن 'Anonymous Authentication' غير مفعل في Firebase.");
+      } else if (error.code === 'auth/network-request-failed') {
+        setAuthError("فشل الاتصال بخوادم التحقق. يرجى التأكد من اتصالك بالإنترنت أو عدم وجود جدار حماية يمنع الاتصال.");
+      } else {
+        setAuthError(error.message);
+      }
+      setIsAuthReady(true);
+    });
+  };
 
   useEffect(() => {
     const checkParams = () => {
@@ -94,6 +117,11 @@ const App: React.FC = () => {
     setErrorMessage('');
     
     try {
+      if (!auth.currentUser) {
+        showToast("يجب تسجيل الدخول أولاً للبدء. جاري المحاولة...", "info");
+        await signInAnonymously(auth);
+      }
+      
       // Load history
       let excludedAnswers: string[] = [];
       try {
@@ -122,6 +150,7 @@ const App: React.FC = () => {
       const topicToUse = newConfig.topic || 'عام';
 
       let generated: Question[] = [];
+      let lastError: any = null;
 
       if (newConfig.customJson) {
         generated = parseCustomJson(newConfig.customJson, topicToUse, newConfig.mode, newConfig.difficulty);
@@ -161,16 +190,24 @@ const App: React.FC = () => {
               
               generated.push(...newQuestions);
             }
-          } catch (batchError) {
+          } catch (batchError: any) {
             console.error(`Error in batch generation attempt ${attempts + 1}:`, batchError);
+            lastError = batchError;
           }
           
           attempts++;
         }
+        
+        if (generated.length === 0 && lastError) {
+          throw lastError;
+        }
       }
       
       if (!generated || generated.length === 0) {
-        throw new Error("عذراً، لم نتمكن من توليد أسئلة لهذا الموضوع حالياً. يرجى التأكد من إعدادات الـ API والمحاولة مرة أخرى.");
+        if (lastError) {
+          throw lastError;
+        }
+        throw new Error("عذراً، لم نتمكن من الحصول على أسئلة جديدة. قد يكون السبب تكرار الأسئلة السابقة بكثرة، يرجى محاولة تغيير الموضوع أو مسح السجل.");
       }
       
       if (generated.length < requiredCount && generated.length > 0) {
@@ -320,24 +357,36 @@ const App: React.FC = () => {
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
-              {authError && gameState === 'remote' && (
+              {authError && (
                 <div className="flex flex-col items-center justify-center py-20">
-                  <div className="vintage-panel p-12 rounded-[2rem] text-center max-w-md">
+                  <div className="vintage-panel p-12 rounded-[2rem] text-center max-w-md border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)]">
                     <CartoonLock size={64} className="mx-auto mb-6" />
                     <h2 className="text-3xl font-bold text-[var(--color-ink-black)] mb-4 vintage-text">خطأ في المصادقة</h2>
                     <p className="text-[var(--color-bg-dark)] mb-8 leading-relaxed font-bold">{authError}</p>
-                    <button onClick={handleReset} className="vintage-button w-full py-4 rounded-xl text-lg font-bold bg-[var(--color-primary-gold)]">
-                      العودة للرئيسية
-                    </button>
+                    
+                    {authError.includes('Anonymous Authentication') && (
+                      <div className="bg-[var(--color-primary-gold)]/20 p-4 rounded-xl border-2 border-[var(--color-ink-black)] mb-8 text-sm font-bold">
+                        تأكد من تفعيل "Anonymous Authentication" في إعدادات Firebase لتمكين ميزات اللعب الجماعي.
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-4">
+                      <button onClick={handleRetryAuth} className="vintage-button w-full py-4 rounded-xl text-lg font-bold bg-[var(--color-primary-green)] text-white">
+                        إعادة المحاولة
+                      </button>
+                      <button onClick={handleReset} className="vintage-button w-full py-4 rounded-xl text-lg font-bold bg-[var(--color-primary-gold)]">
+                        العودة للرئيسية
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {gameState === 'remote' && !authError && <RemoteBuzzer />}
+              {!authError && gameState === 'remote' && <RemoteBuzzer />}
               
-              {gameState === 'config' && <ConfigScreen onStart={handleStartGame} />}
+              {!authError && gameState === 'config' && <ConfigScreen onStart={handleStartGame} />}
               
-              {gameState === 'library' && <LibraryScreen onPlaySet={handlePlaySavedSet} onClose={() => setGameState('config')} />}
+              {!authError && gameState === 'library' && <LibraryScreen onPlaySet={handlePlaySavedSet} onClose={() => setGameState('config')} />}
               
               {gameState === 'loading' && (
                 <div className="flex flex-col items-center justify-center py-32 space-y-12">

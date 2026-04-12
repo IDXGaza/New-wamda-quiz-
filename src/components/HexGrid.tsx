@@ -40,10 +40,10 @@ const HexGrid: React.FC<HexGridProps> = ({
   const points = "52,0 104,30 104,90 52,120 0,90 0,30";
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto">
+    <div className="relative w-full max-w-[min(90vw,800px)] mx-auto overflow-visible">
       <svg 
-        viewBox={`-120 -120 ${viewBoxWidth + 240} ${viewBoxHeight + 240}`} 
-        className="w-full h-auto hex-svg-container drop-shadow-2xl"
+        viewBox={`-80 -100 ${viewBoxWidth + 160} ${viewBoxHeight + 180}`} 
+        className="w-full h-auto hex-svg-container drop-shadow-2xl overflow-visible"
       >
         <defs>
           <filter id="scribble-filter" x="-20%" y="-20%" width="140%" height="140%">

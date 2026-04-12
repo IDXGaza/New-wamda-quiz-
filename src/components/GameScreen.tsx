@@ -501,12 +501,12 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
     }
 
     return (
-      <div className="w-full max-w-7xl mx-auto vintage-panel p-6 md:p-8 overflow-x-auto relative">
-        <div className={`grid gap-4 md:gap-6 min-w-[800px] md:min-w-0 relative z-10`} style={{ gridTemplateColumns: `repeat(${displayCategories.length}, 1fr)` }}>
+      <div className="w-full max-w-7xl mx-auto vintage-panel p-4 md:p-8 overflow-x-auto relative">
+        <div className={`grid gap-3 md:gap-6 min-w-max md:min-w-0 relative z-10`} style={{ gridTemplateColumns: `repeat(${displayCategories.length}, 1fr)` }}>
           {displayCategories.map((cat, i) => (
-            <div key={i} className="space-y-4 md:space-y-6">
-              <div className="bg-white/10 border border-white/20 text-white p-4 rounded-2xl text-center h-28 flex items-center justify-center backdrop-blur-sm transition-all duration-300 hover:bg-white/15">
-                <h3 className="font-bold text-xl md:text-2xl leading-tight">{cat}</h3>
+            <div key={i} className="space-y-3 md:space-y-6 min-w-[140px] md:min-w-0">
+              <div className="bg-white/10 border border-white/20 text-white p-3 md:p-4 rounded-2xl text-center h-20 md:h-28 flex items-center justify-center backdrop-blur-sm transition-all duration-300 hover:bg-white/15">
+                <h3 className="font-bold text-lg md:text-2xl leading-tight">{cat}</h3>
               </div>
               {jeopardyGrid[cat].map((q) => {
                 const isAnswered = !!answeredMap[q.id];
@@ -521,7 +521,7 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                       setEditedQuestion(q);
                       setIsEditing(false);
                     }}
-                    className={`w-full aspect-[4/3] vintage-card transition-all duration-300 flex items-center justify-center relative overflow-hidden group ${
+                    className={`w-full aspect-video md:aspect-[4/3] vintage-card transition-all duration-300 flex items-center justify-center relative overflow-hidden group ${
                       isAnswered 
                         ? 'opacity-60 cursor-not-allowed scale-95' 
                         : 'hover:scale-105 hover:shadow-[0_0_20px_var(--color-primary-gold)]'
@@ -533,11 +533,11 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                     )}
                     {isAnswered ? (
                       <div className="flex flex-col items-center justify-center animate-pop-in">
-                        <CartoonCheck size={40} className="mb-2" />
-                        <span className="text-sm bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm text-[var(--color-off-white)]">مكتمل</span>
+                        <CartoonCheck size={32} className="mb-1" />
+                        <span className="text-[10px] md:text-sm bg-black/40 px-2 py-0.5 rounded-full backdrop-blur-sm text-[var(--color-off-white)]">مكتمل</span>
                       </div>
                     ) : (
-                      <span className="vintage-text text-4xl text-[var(--color-primary-gold)]">{q.points}</span>
+                      <span className="vintage-text text-2xl md:text-4xl text-[var(--color-primary-gold)]">{q.points}</span>
                     )}
                   </button>
                 );
@@ -695,14 +695,14 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-start md:items-center justify-center p-6 pt-20 md:pt-24 bg-slate-950/80 backdrop-blur-md overflow-y-auto"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 bg-slate-950/80 backdrop-blur-md overflow-y-auto"
           >
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className={`w-full max-w-3xl rounded-[2.5rem] p-8 md:p-12 vintage-panel relative overflow-y-auto max-h-[90vh] text-center border-8 border-[var(--color-ink-black)] shadow-[12px_12px_0px_var(--color-ink-black)] ${
-                powerInUse === PowerType.STEAL ? 'ring-8 ring-[var(--color-primary-red)]' : ''
+              className={`w-full max-w-3xl rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-12 vintage-panel relative overflow-y-auto max-h-[95vh] text-center border-4 md:border-8 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] md:shadow-[12px_12px_0px_var(--color-ink-black)] ${
+                powerInUse === PowerType.STEAL ? 'ring-4 md:ring-8 ring-[var(--color-primary-red)]' : ''
               }`}
             >
               {powerInUse === PowerType.STEAL && (
@@ -721,7 +721,7 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                 </div>
               )}
 
-              <div className={`absolute top-8 left-8 font-black text-3xl w-16 h-16 flex items-center justify-center rounded-2xl z-20 border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] ${
+              <div className={`absolute top-4 md:top-8 left-4 md:left-8 font-black text-2xl md:text-3xl w-12 h-12 md:w-16 md:h-16 flex items-center justify-center rounded-xl md:rounded-2xl z-20 border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] ${
                 timeLeft <= 5 ? 'bg-[var(--color-primary-red)] text-white animate-bounce' : 'bg-[var(--color-primary-gold)] text-[var(--color-ink-black)]'
               }`}>
                 {timeLeft}
@@ -774,8 +774,8 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                         </div>
                       </div>
 
-                      <div className="p-8 md:p-12 rounded-3xl bg-[var(--color-off-white)] border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)]">
-                        <h3 className="text-3xl md:text-5xl font-black leading-tight text-[var(--color-ink-black)] vintage-text">
+                      <div className="p-6 md:p-12 rounded-3xl bg-[var(--color-off-white)] border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] md:shadow-[8px_8px_0px_var(--color-ink-black)]">
+                        <h3 className="text-2xl md:text-5xl font-black leading-tight text-[var(--color-ink-black)] vintage-text">
                           {activeQuestion.text}
                         </h3>
                       </div>
@@ -802,9 +802,9 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                           </button>
                         ) : (
                           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-                            <div className="p-8 md:p-12 rounded-3xl bg-[var(--color-primary-green)]/10 border-4 border-[var(--color-ink-black)] relative shadow-[8px_8px_0px_var(--color-ink-black)]">
+                            <div className="p-6 md:p-12 rounded-3xl bg-[var(--color-primary-green)]/10 border-4 border-[var(--color-ink-black)] relative shadow-[4px_4px_0px_var(--color-ink-black)] md:shadow-[8px_8px_0px_var(--color-ink-black)]">
                               <p className="absolute -top-5 left-1/2 -translate-x-1/2 bg-[var(--color-ink-black)] text-[var(--color-primary-gold)] px-6 py-2 rounded-xl text-lg font-black border-2 border-[var(--color-primary-gold)]">الإجابة</p>
-                              <p className="text-5xl md:text-7xl font-black text-[var(--color-ink-black)] mt-4 vintage-text">{activeQuestion.answer}</p>
+                              <p className="text-4xl md:text-7xl font-black text-[var(--color-ink-black)] mt-4 vintage-text">{activeQuestion.answer}</p>
                             </div>
 
                             {!showScoring ? (
@@ -886,23 +886,23 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
 
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[var(--color-ink-black)]/80 backdrop-blur-md animate-fade-in">
-        <div className="w-full max-w-lg rounded-[3rem] p-12 vintage-panel text-center relative overflow-hidden border-8 border-[var(--color-ink-black)] shadow-[15px_15px_0px_var(--color-ink-black)]">
+        <div className="w-full max-w-lg rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-12 vintage-panel text-center relative overflow-hidden border-4 md:border-8 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] md:shadow-[15px_15px_0px_var(--color-ink-black)]">
           <div className="relative z-10">
-            <div className="w-32 h-32 bg-[var(--color-primary-gold)] rounded-3xl flex items-center justify-center mx-auto mb-10 border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] animate-bounce">
-              <CartoonStar className="w-20 h-20" />
+            <div className="w-20 h-20 md:w-32 md:h-32 bg-[var(--color-primary-gold)] rounded-2xl md:rounded-3xl flex items-center justify-center mx-auto mb-6 md:mb-10 border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] md:shadow-[8px_8px_0px_var(--color-ink-black)] animate-bounce">
+              <CartoonStar className="w-12 h-12 md:w-20 md:h-20" />
             </div>
-            <h2 className="text-5xl font-black text-[var(--color-ink-black)] mb-6 vintage-text">فوز مستحق!</h2>
-            <div className="inline-block px-10 py-6 rounded-3xl text-white text-4xl font-black mb-10 border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)]" style={{backgroundColor: winner.color}}>
+            <h2 className="text-3xl md:text-5xl font-black text-[var(--color-ink-black)] mb-4 md:mb-6 vintage-text">فوز مستحق!</h2>
+            <div className="inline-block px-6 md:px-10 py-4 md:py-6 rounded-2xl md:rounded-3xl text-white text-2xl md:text-4xl font-black mb-6 md:mb-10 border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] md:shadow-[8px_8px_0px_var(--color-ink-black)]" style={{backgroundColor: winner.color}}>
               {winner.name}
             </div>
-            <p className="text-[var(--color-bg-dark)] font-bold text-xl mb-12 bg-[var(--color-off-white)] p-8 rounded-3xl border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)]">
+            <p className="text-[var(--color-bg-dark)] font-bold text-lg md:text-xl mb-8 md:mb-12 bg-[var(--color-off-white)] p-6 md:p-8 rounded-2xl md:rounded-3xl border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)]">
               {config.mode === GameMode.HEX_GRID 
                 ? 'لقد نجحتم في تكوين المسار المتصل أولاً!' 
                 : `لقد فزتم بأعلى رصيد من النقاط (${winner.score} نقطة)!`}
             </p>
             <button 
               onClick={() => onFinish(players)}
-              className="vintage-button w-full py-6 rounded-2xl text-3xl font-black bg-[var(--color-primary-gold)]"
+              className="vintage-button w-full py-4 md:py-6 rounded-2xl text-2xl md:text-3xl font-black bg-[var(--color-primary-gold)]"
             >
               عرض النتائج النهائية
             </button>
@@ -933,18 +933,18 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
   }
 
   return (
-    <div className="flex flex-col items-center gap-8 min-h-screen p-4 md:p-8 relative">
+    <div className="flex flex-col items-center gap-4 md:gap-8 min-h-screen p-2 md:p-8 relative">
       
       {/* Scoreboard */}
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 relative z-10">
         {players.map((p, idx) => (
           <motion.div 
             key={p.id} 
             initial={{ x: idx === 0 ? -50 : 50, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            className={`flex items-center gap-6 p-8 rounded-3xl vintage-panel transition-all border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] relative overflow-hidden ${
+            className={`flex items-center gap-4 md:gap-6 p-4 md:p-8 rounded-2xl md:rounded-3xl vintage-panel transition-all border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] md:shadow-[8px_8px_0px_var(--color-ink-black)] relative overflow-hidden ${
               currentPlayerIndex === idx 
-                ? (activePower ? 'bg-[var(--color-primary-gold)]/40 scale-105 z-10 ring-4 ring-[var(--color-primary-gold)] ring-offset-4 ring-offset-[var(--color-bg-cream)]' : 'bg-[var(--color-primary-gold)]/20 scale-105 z-10') 
+                ? (activePower ? 'bg-[var(--color-primary-gold)]/40 scale-[1.02] md:scale-105 z-10 ring-4 ring-[var(--color-primary-gold)] ring-offset-4 ring-offset-[var(--color-bg-cream)]' : 'bg-[var(--color-primary-gold)]/20 scale-[1.02] md:scale-105 z-10') 
                 : 'bg-[var(--color-off-white)] opacity-90'
             }`}
           >
@@ -962,7 +962,7 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
             )}
             
             <div 
-              className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-4xl font-black border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] relative" 
+              className="w-14 h-14 md:w-20 md:h-20 rounded-xl md:rounded-2xl flex items-center justify-center text-white text-2xl md:text-4xl font-black border-4 border-[var(--color-ink-black)] shadow-[3px_3px_0px_var(--color-ink-black)] md:shadow-[4px_4px_0px_var(--color-ink-black)] relative" 
               style={{backgroundColor: p.color}}
             >
               {p.score}
@@ -983,11 +983,11 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                   <span className="bg-[var(--color-primary-gold)] text-[var(--color-ink-black)] border-2 border-[var(--color-ink-black)] text-xs font-black px-4 py-1 rounded-full animate-wobble">دورك الآن!</span>
                 )}
               </div>
-              <span className="text-3xl font-black text-[var(--color-ink-black)] truncate vintage-text">{p.name}</span>
+              <span className="text-xl md:text-3xl font-black text-[var(--color-ink-black)] truncate vintage-text">{p.name}</span>
               
               {/* Powers Display */}
               {config.mode === GameMode.HEX_GRID && (
-                <div className="flex gap-3 mt-4">
+                <div className="flex gap-2 md:gap-3 mt-2 md:mt-4">
                   {Object.entries(p.powers).map(([type, count]) => (
                     <button 
                       key={type} 
@@ -1001,7 +1001,7 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                           showToast(`تم تفعيل قدرة: ${type === PowerType.FREEZE ? 'التجميد' : type === PowerType.SHIELD ? 'الدرع' : 'السرقة'}`, "success");
                         }
                       }}
-                      className={`flex items-center gap-3 px-5 py-3 rounded-2xl border-4 border-[var(--color-ink-black)] text-sm font-black transition-all shadow-[4px_4px_0px_var(--color-ink-black)] active:translate-y-1 active:shadow-none ${
+                      className={`flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2 md:py-3 rounded-xl md:rounded-2xl border-2 md:border-4 border-[var(--color-ink-black)] text-xs md:text-sm font-black transition-all shadow-[3px_3px_0px_var(--color-ink-black)] md:shadow-[4px_4px_0px_var(--color-ink-black)] active:translate-y-1 active:shadow-none ${
                         (count as number) > 0 
                           ? (activePower === type 
                               ? 'bg-[var(--color-primary-gold)] text-[var(--color-ink-black)] scale-110 -translate-y-1' 
@@ -1009,12 +1009,12 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed grayscale'
                       }`}
                     >
-                      <div className="p-1 bg-white/20 rounded-lg">
-                        {type === PowerType.FREEZE && <CartoonSnowflake className="w-6 h-6" />}
-                        {type === PowerType.SHIELD && <CartoonShield className="w-6 h-6" />}
-                        {type === PowerType.STEAL && <CartoonGhost className="w-6 h-6" />}
+                      <div className="p-0.5 md:p-1 bg-white/20 rounded-lg">
+                        {type === PowerType.FREEZE && <CartoonSnowflake className="w-4 h-4 md:w-6 md:h-6" />}
+                        {type === PowerType.SHIELD && <CartoonShield className="w-4 h-4 md:w-6 md:h-6" />}
+                        {type === PowerType.STEAL && <CartoonGhost className="w-4 h-4 md:w-6 md:h-6" />}
                       </div>
-                      <span className="text-lg">{count}</span>
+                      <span className="text-sm md:text-lg">{count}</span>
                     </button>
                   ))}
                 </div>

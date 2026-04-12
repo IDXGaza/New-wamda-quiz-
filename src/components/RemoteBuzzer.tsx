@@ -22,23 +22,46 @@ const RemoteBuzzer: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const handleAuth = () => {
+    setAuthError(null);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
         signInAnonymously(auth).catch((error: any) => {
-          if (error.code === 'auth/admin-restricted-operation') {
-            setAuthError("عذراً، يجب تفعيل 'Anonymous Authentication' في لوحة تحكم Firebase.");
+          console.error("Auth Error Details:", error.code, error.message);
+          if (error.code === 'auth/admin-restricted-operation' || error.code === 'auth/operation-not-allowed') {
+            setAuthError("عذراً، يجب تفعيل 'Anonymous Authentication' في لوحة تحكم Firebase (Authentication > Sign-in method).");
+          } else if (error.code === 'auth/network-request-failed') {
+            setAuthError("فشل الاتصال بخوادم التحقق. يرجى التأكد من اتصالك بالإنترنت.");
           } else {
-            console.error("Auth Error:", error);
-            setAuthError(error.message);
+            setAuthError(`خطأ في الاتصال بـ Firebase: ${error.message}`);
           }
         });
       } else {
         setIsAuthReady(true);
+        setAuthError(null);
       }
     });
+    return unsubscribe;
+  };
+
+  useEffect(() => {
+    const unsubscribe = handleAuth();
     return () => unsubscribe();
   }, []);
+
+  const handleRetryAuth = () => {
+    setIsAuthReady(false);
+    setAuthError(null);
+    signInAnonymously(auth).catch((error: any) => {
+      if (error.code === 'auth/admin-restricted-operation') {
+        setAuthError("عذراً، يجب تفعيل 'Anonymous Authentication' في لوحة تحكم Firebase.");
+      } else if (error.code === 'auth/network-request-failed') {
+        setAuthError("فشل الاتصال بخوادم التحقق. يرجى التأكد من اتصالك بالإنترنت أو عدم وجود جدار حماية يمنع الاتصال.");
+      } else {
+        setAuthError(error.message);
+      }
+    });
+  };
 
   useEffect(() => {
     if (!isAuthReady) return;
@@ -76,6 +99,8 @@ const RemoteBuzzer: React.FC = () => {
     }
   }, [selectedPlayer, isAuthReady]);
 
+  const [joinedAt] = useState(() => new Date().toISOString());
+
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!playerNameInput.trim() || !roomId || !auth.currentUser) return;
@@ -94,7 +119,7 @@ const RemoteBuzzer: React.FC = () => {
       name: newPlayer.name,
       color: newPlayer.color,
       score: 0,
-      joinedAt: new Date().toISOString()
+      joinedAt: joinedAt
     }).catch(err => handleFirestoreError(err, OperationType.WRITE, playerPath));
   };
 
@@ -132,9 +157,14 @@ const RemoteBuzzer: React.FC = () => {
           <h2 className="text-3xl font-display text-[var(--color-ink-black)] mb-4">خطأ في المصادقة</h2>
           <p className="text-[var(--color-bg-dark)] font-arabic font-bold mb-6">{authError}</p>
           <div className="bg-[var(--color-primary-gold)]/20 p-4 rounded-2xl border-4 border-[var(--color-ink-black)] text-[var(--color-ink-black)] text-sm mb-6 font-arabic font-bold">
-            يرجى إبلاغ منظم المسابقة بتفعيل "الدخول المجهول" (Anonymous Authentication) في إعدادات Firebase.
+            {authError.includes('Anonymous Authentication') 
+              ? 'يرجى إبلاغ منظم المسابقة بتفعيل "الدخول المجهول" (Anonymous Authentication) في إعدادات Firebase.'
+              : 'يرجى التأكد من اتصالك بالإنترنت والمحاولة مرة أخرى.'}
           </div>
-          <button onClick={goHome} className="w-full py-4 vintage-button rounded-xl font-display text-xl">العودة للقائمة الرئيسية</button>
+          <div className="flex flex-col gap-4">
+            <button onClick={handleRetryAuth} className="w-full py-4 vintage-button rounded-xl font-display text-xl bg-[var(--color-primary-green)] text-white">إعادة المحاولة</button>
+            <button onClick={goHome} className="w-full py-4 vintage-button rounded-xl font-display text-xl">العودة للقائمة الرئيسية</button>
+          </div>
         </div>
       </div>
     );
