@@ -8,6 +8,7 @@ import TrueFalseScreen from './TrueFalseScreen';
 const HexGrid = lazy(() => import('./HexGrid'));
 import { useSettings } from '../contexts/SettingsContext';
 import { extractJson, getAI, generateQuestions, fetchSingleQuestion } from '../services/geminiService';
+import { updateQuestionStats } from '../services/vaultService';
 import { playSound } from '../utils/sound';
 import { useToast } from '../contexts/ToastContext';
 import { 
@@ -128,7 +129,7 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
           if (q) {
             row.push({
               ...q,
-              id: `${rIdx}-${cIdx}`,
+              id: q.id, // Preserve real ID for vaulting
               letter: displayLetter
             });
           } else {
@@ -251,9 +252,18 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
     return false;
   }, [grid, answeredMap, config.mode, players]);
 
+  const [showHint, setShowHint] = useState(false);
+  
   const handleAnswer = useCallback((playerId: string | null, isCorrect: boolean) => {
     if (!activeQuestion) return;
     
+    // Performance Tracking
+    const timeSpentMs = (TIMER_DURATION - timeLeft) * 1000;
+    if (activeQuestion.id && !activeQuestion.id.startsWith('manual') && !activeQuestion.id.startsWith('custom')) {
+      updateQuestionStats(activeQuestion.id, isCorrect, timeSpentMs).catch(err => console.error("Vault update failed", err));
+    }
+
+    setShowHint(false);
     let newPlayers = [...players];
     let updatedAnsweredMap = { ...answeredMap };
     
@@ -593,9 +603,11 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
     // If using FREEZE power
     if (activePower === PowerType.FREEZE) {
       if (currentColor) {
+        playSound('wrong');
         showToast("لا يمكنك تجميد خلية محتلة!", "error");
         return;
       }
+      playSound('power');
       setFrozenCells(prev => ({ ...prev, [q.id]: players.length })); // Freeze for one full round
       // Consume power
       setPlayers(prev => prev.map(p => p.id === player.id ? { ...p, powers: { ...p.powers, [PowerType.FREEZE]: p.powers[PowerType.FREEZE] - 1 } } : p));
@@ -607,9 +619,11 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
     // If using SHIELD power
     if (activePower === PowerType.SHIELD) {
       if (currentColor !== player.color) {
+        playSound('wrong');
         showToast("يمكنك حماية خلاياك فقط!", "error");
         return;
       }
+      playSound('power');
       setShieldedCells(prev => ({ ...prev, [q.id]: true }));
       // Consume power
       setPlayers(prev => prev.map(p => p.id === player.id ? { ...p, powers: { ...p.powers, [PowerType.SHIELD]: p.powers[PowerType.SHIELD] - 1 } } : p));
@@ -621,13 +635,16 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
     // If using STEAL power
     if (activePower === PowerType.STEAL) {
       if (!currentColor || currentColor.toLowerCase() === player.color.toLowerCase()) {
+        playSound('wrong');
         showToast("يمكنك سرقة خلايا الخصم فقط!", "error");
         return;
       }
       if (isShielded) {
+        playSound('wrong');
         showToast("هذه الخلية محمية بدرع!", "error");
         return;
       }
+      playSound('power');
       // Proceed to question but it will be HARD
     } else {
       // Normal click
@@ -639,7 +656,7 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
       if (config.hexMode === 'ai' || activePower === PowerType.STEAL) {
         let finalQ = q;
         if (activePower === PowerType.STEAL || !q.text) {
-          const diff = activePower === PowerType.STEAL ? Difficulty.HARD : q.difficulty;
+          const diff = activePower === PowerType.STEAL ? Difficulty.MEDIUM : q.difficulty;
           
           if (config.mode === GameMode.HEX_GRID && q.letter) {
             // Use fetchQuestion to ensure the letter is respected for Hex Grid steals
@@ -791,6 +808,30 @@ const GameScreen: React.FC<Props> = ({ config, questions, players: initialPlayer
                            activeQuestion.difficulty === Difficulty.MEDIUM ? 'متوسط' : 'صعب'}
                         </span>
                       </div>
+
+                      {activeQuestion.hint && (
+                        <div className="flex flex-col items-center gap-3">
+                          {!showHint ? (
+                            <button 
+                              onClick={() => {
+                                playSound('click');
+                                setShowHint(true);
+                              }}
+                              className="text-indigo-600 font-bold flex items-center gap-2 hover:text-indigo-800 transition-colors"
+                            >
+                              <CartoonSearch size={20} /> هل تحتاج مساعدة؟ (إظهار تلميح)
+                            </button>
+                          ) : (
+                            <motion.div 
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="bg-indigo-50 border-2 border-indigo-200 p-4 rounded-2xl text-indigo-800 font-bold"
+                            >
+                              💡 تلميح: {activeQuestion.hint}
+                            </motion.div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="flex flex-col gap-6 pt-6">
                         {!revealed ? (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Question, Player, GameConfig } from '../types';
+import { playSound } from '../utils/sound';
 import { CartoonTimer, CartoonEye, CartoonSkip, CartoonRocket } from './CartoonIcons';
 
 interface SilentGuessScreenProps {
@@ -18,8 +19,15 @@ const SilentGuessScreen: React.FC<SilentGuessScreenProps> = ({ config, questions
 
   useEffect(() => {
     if (showWordToActor && timeLeft > 0) {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      const timer = setTimeout(() => {
+        if (timeLeft <= 6 && timeLeft > 1) {
+          playSound('tick');
+        }
+        setTimeLeft(timeLeft - 1);
+      }, 1000);
       return () => clearTimeout(timer);
+    } else if (showWordToActor && timeLeft === 0) {
+      playSound('wrong');
     }
   }, [showWordToActor, timeLeft]);
 
@@ -54,6 +62,7 @@ const SilentGuessScreen: React.FC<SilentGuessScreenProps> = ({ config, questions
 
         <button 
           onClick={() => {
+            playSound('click');
             setShowWordToActor(!showWordToActor);
             setTimeLeft(60);
           }}
@@ -66,6 +75,7 @@ const SilentGuessScreen: React.FC<SilentGuessScreenProps> = ({ config, questions
         <div className="flex justify-between gap-4 md:gap-6 mt-8 md:mt-10">
             <button 
               onClick={() => {
+                playSound('click');
                 setActiveQuestionIndex(prev => Math.max(0, prev - 1));
                 setShowWordToActor(false);
                 setTimeLeft(60);
@@ -77,11 +87,13 @@ const SilentGuessScreen: React.FC<SilentGuessScreenProps> = ({ config, questions
             </button>
             <button 
               onClick={() => {
+                playSound('click');
                 if (activeQuestionIndex < questions.length - 1) {
                   setActiveQuestionIndex(prev => prev + 1);
                   setShowWordToActor(false);
                   setTimeLeft(60);
                 } else {
+                  playSound('win');
                   onFinish(players);
                 }
               }}

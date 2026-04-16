@@ -36,6 +36,29 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." }
       },
       "required": ["name", "email", "role", "createdAt"]
+    },
+    "VaultQuestion": {
+      "title": "VaultQuestion",
+      "description": "A question stored in the vault for a specific user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "answer": { "type": "string" },
+        "category": { "type": "string" },
+        "points": { "type": "number" },
+        "type": { "type": "string" },
+        "difficulty": { "type": "string" },
+        "userId": { "type": "string" },
+        "topic_match": { "type": "string" },
+        "times_played": { "type": "number" },
+        "last_played_at": { "type": "number" },
+        "avg_time_to_answer": { "type": "number" },
+        "correct_count": { "type": "number" },
+        "mastered": { "type": "boolean" },
+        "real_difficulty_score": { "type": "number" }
+      },
+      "required": ["id", "text", "answer", "userId"]
     }
   },
   "firestore": {
@@ -50,6 +73,10 @@
     "rooms/{roomId}/players/{playerId}": {
       "schema": { "$ref": "#/entities/Player" },
       "description": "Stores players within a specific game room."
+    },
+    "questions_vault/{questionId}": {
+      "schema": { "$ref": "#/entities/VaultQuestion" },
+      "description": "Stores questions for recycling and analysis."
     }
   }
 }

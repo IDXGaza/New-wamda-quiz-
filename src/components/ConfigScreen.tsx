@@ -3,6 +3,7 @@ import { GameConfig, GameMode, QuestionType, Player, Difficulty } from '../types
 import { Type } from "@google/genai";
 import { getAI, extractJson, generateQuestions } from '../services/geminiService';
 import { useToast } from '../contexts/ToastContext';
+import { playSound } from '../utils/sound';
 import { 
   CartoonHexagon, 
   CartoonGrid, 
@@ -71,11 +72,13 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
   const [isGeneratingSamples, setIsGeneratingSamples] = useState(false);
 
   const randomizeTopic = React.useCallback(() => {
+    playSound('click');
     const topics = ["تاريخ إسلامي", "عواصم العالم", "اختراعات غيرت العالم", "أدب عالمي", "عجائب الدنيا", "فضاء ونجوم", "كيمياء حيوية", "تاريخ الأندلس", "أساطير قديمة", "أفلام ومسلسلات"];
     setTopic(topics[Math.floor(Math.random() * topics.length)]);
   }, [setTopic]);
 
   const clearManualQuestions = React.useCallback(() => {
+    playSound('click');
     if (window.confirm("هل أنت متأكد من مسح جميع الأسئلة اليدوية؟")) {
       setManualQuestions({});
     }
@@ -208,9 +211,12 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputMethod === 'manual' && !isManualValid()) {
+      playSound('wrong');
       showToast('الرجاء إكمال جميع الأسئلة المطلوبة بشكل صحيح', "error");
       return;
     }
+
+    playSound('start');
 
     const players: Player[] = playersConfig.map((p) => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -287,6 +293,38 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
             <CartoonGear className="w-12 h-12 animate-spin-slow" />
           </div>
           <h1 className="text-5xl md:text-7xl font-bold mb-4 text-[var(--color-ink-black)] tracking-tight vintage-text">إعداد المسابقة</h1>
+          
+          {/* Join Room Section */}
+          <div className="mt-8 flex flex-col items-center gap-4">
+            <p className="text-lg font-bold text-[var(--color-bg-dark)]">لديك رمز غرفة؟</p>
+            <div className="flex gap-2 w-full max-w-sm">
+              <input 
+                type="text" 
+                placeholder="أدخل الرمز هنا..." 
+                className="vintage-input flex-1 p-4 text-center font-display tracking-widest uppercase"
+                id="room-code-input"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const code = (e.target as HTMLInputElement).value.trim().toUpperCase();
+                    if (code) window.location.href = `?mode=remote&roomId=${code}`;
+                  }
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  playSound('click');
+                  const input = document.getElementById('room-code-input') as HTMLInputElement;
+                  const code = input.value.trim().toUpperCase();
+                  if (code) window.location.href = `?mode=remote&roomId=${code}`;
+                  else showToast("الرجاء إدخال رمز الغرفة", "warning");
+                }}
+                className="vintage-button bg-[var(--color-primary-blue)] text-white px-6"
+              >
+                انضمام
+              </button>
+            </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-12 relative z-10">
@@ -309,7 +347,10 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
                 <button
                   key={m.val}
                   type="button"
-                  onClick={() => setMode(m.val)}
+                  onClick={() => {
+                    playSound('click');
+                    setMode(m.val);
+                  }}
                   className={`vintage-button rounded-3xl p-8 flex flex-col items-center gap-4 text-center transition-all duration-300 ${mode === m.val ? `ring-4 ${m.ring} scale-105 shadow-[8px_8px_0px_var(--color-ink-black)]` : 'bg-[var(--color-off-white)] hover:scale-105'}`}
                   style={mode === m.val ? { backgroundColor: m.activeBg, color: m.activeText } : {}}
                 >
@@ -392,7 +433,10 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
                     <button
                       key={t.name}
                       type="button"
-                      onClick={() => setTopic(t.name)}
+                      onClick={() => {
+                        playSound('click');
+                        setTopic(t.name);
+                      }}
                       className={`px-6 py-3 rounded-xl border transition-all font-medium text-sm ${topic === t.name ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}
                     >
                       <span className="ml-2">{t.icon}</span> {t.name}
@@ -414,7 +458,10 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <button
                   type="button"
-                  onClick={() => setQuestionType(QuestionType.OPEN)}
+                  onClick={() => {
+                    playSound('click');
+                    setQuestionType(QuestionType.OPEN);
+                  }}
                   className={`vintage-button py-6 text-xl flex flex-col items-center gap-2 ${questionType === QuestionType.OPEN ? 'bg-[var(--color-primary-gold)] ring-4 ring-amber-500/50' : 'bg-[var(--color-off-white)]'}`}
                 >
                   <span className="font-bold text-2xl">أسئلة مفتوحة</span>
@@ -443,7 +490,10 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <button 
                 type="button"
-                onClick={() => setInputMethod('ai')}
+                onClick={() => {
+                  playSound('click');
+                  setInputMethod('ai');
+                }}
                 className={`relative p-6 md:p-8 rounded-[2rem] transition-all duration-300 text-right overflow-hidden group/btn border-4 border-[var(--color-ink-black)] ${inputMethod === 'ai' ? 'shadow-[6px_6px_0px_var(--color-ink-black)]' : 'bg-[var(--color-off-white)] hover:bg-[var(--color-bg-cream)]'}`}
                 style={inputMethod === 'ai' ? { backgroundColor: 'var(--color-primary-green)', color: 'white' } : {}}
               >
@@ -459,7 +509,10 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
               
               <button 
                 type="button"
-                onClick={() => setInputMethod('manual')}
+                onClick={() => {
+                  playSound('click');
+                  setInputMethod('manual');
+                }}
                 className={`relative p-6 md:p-8 rounded-[2rem] transition-all duration-300 text-right overflow-hidden group/btn border-4 border-[var(--color-ink-black)] ${inputMethod === 'manual' ? 'shadow-[6px_6px_0px_var(--color-ink-black)]' : 'bg-[var(--color-off-white)] hover:bg-[var(--color-bg-cream)]'}`}
                 style={inputMethod === 'manual' ? { backgroundColor: 'var(--color-primary-gold)', color: 'var(--color-ink-black)' } : {}}
               >
@@ -677,16 +730,19 @@ const ConfigScreen: React.FC<Props> = ({ onStart }) => {
               </div>
               <div className="flex flex-col gap-4">
                 {[
-                  { val: Difficulty.EASY, label: 'سهل', color: 'var(--color-primary-green)', text: 'white' },
+                  { val: Difficulty.EASY, label: 'سهل', color: '#84cc16', text: 'white' },
                   { val: Difficulty.MEDIUM, label: 'متوسط', color: 'var(--color-primary-gold)', text: 'var(--color-ink-black)' },
                   { val: Difficulty.HARD, label: 'صعب', color: 'var(--color-primary-red)', text: 'white' }
                 ].map(d => (
                   <button
                     key={d.val}
                     type="button"
-                    onClick={() => setDifficulty(d.val)}
+                    onClick={() => {
+                    playSound('click');
+                    setDifficulty(d.val);
+                  }}
                     className={`vintage-button py-5 text-xl transition-all ${difficulty === d.val ? `scale-[1.02] shadow-[6px_6px_0px_var(--color-ink-black)]` : 'bg-[var(--color-off-white)]'}`}
-                    style={difficulty === d.val ? { backgroundColor: `var(--color-primary-${d.val === Difficulty.EASY ? 'green' : d.val === Difficulty.MEDIUM ? 'gold' : 'red'})`, color: d.text } : {}}
+                    style={difficulty === d.val ? { backgroundColor: d.color, color: d.text } : {}}
                   >
                     {d.label}
                   </button>

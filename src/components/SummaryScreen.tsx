@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Player, GameConfig, Question, SavedSet } from '../types';
 import confetti from 'canvas-confetti';
+import { playSound } from '../utils/sound';
 import { CartoonStar, CartoonBook, CartoonCheck, CartoonHome, CartoonTrophy, CartoonGear } from './CartoonIcons';
 
 interface Props {
@@ -16,6 +17,7 @@ const SummaryScreen: React.FC<Props> = ({ config, questions, players, onRestart 
   const sorted = [...players].sort((a, b) => b.score - a.score);
   
   useEffect(() => {
+    playSound('win');
     // Fire confetti when the summary screen loads
     const duration = 3 * 1000;
     const end = Date.now() + duration;
@@ -45,6 +47,7 @@ const SummaryScreen: React.FC<Props> = ({ config, questions, players, onRestart 
 
   const handleSaveToLibrary = () => {
     if (isSaved) return;
+    playSound('click');
     
     const newSet: SavedSet = {
       id: `set-${Date.now()}`,
@@ -109,7 +112,13 @@ const SummaryScreen: React.FC<Props> = ({ config, questions, players, onRestart 
             </>
           )}
         </button>
-        <button onClick={onRestart} className="vintage-button w-full py-8 rounded-[2.5rem] font-display text-4xl flex items-center justify-center gap-6 bg-[var(--color-primary-gold)]">
+        <button 
+          onClick={() => {
+            playSound('click');
+            onRestart();
+          }} 
+          className="vintage-button w-full py-8 rounded-[2.5rem] font-display text-4xl flex items-center justify-center gap-6 bg-[var(--color-primary-gold)]"
+        >
           <CartoonGear size={64} className="animate-spin-slow" />
           <span>القائمة الرئيسية</span>
         </button>

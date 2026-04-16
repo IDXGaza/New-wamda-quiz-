@@ -24,7 +24,8 @@ import SettingsModal from './components/SettingsModal';
 import LibraryScreen from './components/LibraryScreen';
 import { useSettings } from './contexts/SettingsContext';
 import { useToast } from './contexts/ToastContext';
-import { auth } from './firebase';
+import { playSound } from './utils/sound';
+import { auth, db } from './firebase';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 const App: React.FC = () => {
@@ -37,6 +38,7 @@ const App: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isFirestoreOffline, setIsFirestoreOffline] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const { settings, setIsSettingsOpen } = useSettings();
   const { showToast } = useToast();
 
@@ -83,6 +85,27 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const { getDocFromServer, doc } = await import('firebase/firestore');
+        await getDocFromServer(doc(db, '_connectivity_test_', 'ping'));
+        console.log("Firebase connection successful");
+      } catch (error: any) {
+        console.error("Firebase connection test failed:", error);
+        if (error.message?.includes('offline')) {
+          setAuthError("لا يمكن الاتصال بـ Firebase. تأكد من إنشاء قاعدة البيانات (Firestore) في لوحة التحكم.");
+        } else if (error.message?.includes('permission')) {
+          // This is fine, it means we connected but don't have read access to the test doc
+          console.log("Connected to Firebase (Permission restricted as expected)");
+        }
+      }
+    };
+    if (isAuthReady) {
+      testConnection();
+    }
+  }, [isAuthReady]);
+
   const handleRetryAuth = () => {
     setIsAuthReady(false);
     setAuthError(null);
@@ -103,11 +126,28 @@ const App: React.FC = () => {
       const searchParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
       
-      if (searchParams.get('mode') === 'remote' || hashParams.get('mode') === 'remote') {
+      const isRemote = searchParams.get('mode') === 'remote' || hashParams.get('mode') === 'remote';
+      
+      if (isRemote) {
+        console.log("Remote mode detected from URL params");
         setGameState('remote');
       }
     };
+    
     checkParams();
+    window.addEventListener('hashchange', checkParams);
+    window.addEventListener('popstate', checkParams);
+    
+    // Also check periodically for a few seconds in case of slow URL updates
+    const interval = setInterval(checkParams, 1000);
+    const timeout = setTimeout(() => clearInterval(interval), 5000);
+    
+    return () => {
+      window.removeEventListener('hashchange', checkParams);
+      window.removeEventListener('popstate', checkParams);
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   }, []);
 
   const handleStartGame = async (newConfig: GameConfig) => {
@@ -268,6 +308,31 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen text-[var(--color-ink-black)] font-[var(--font-arabic)] overflow-x-hidden relative">
+      {/* Debug Trigger */}
+      <button 
+        onClick={() => setShowDebug(!showDebug)}
+        className="fixed bottom-2 left-2 z-[100] opacity-20 hover:opacity-100 text-[8px] bg-black text-white p-1 rounded"
+      >
+        DEBUG
+      </button>
+
+      {showDebug && (
+        <div className="fixed inset-0 z-[100] bg-black/90 p-6 overflow-auto text-xs font-mono text-green-400 flex items-center justify-center">
+          <div className="bg-gray-900 p-6 rounded-2xl border-4 border-green-500 max-w-lg w-full shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+            <h3 className="text-xl font-bold mb-4 text-green-500 border-b border-green-500 pb-2">معلومات التشخيص (Diagnostic Info)</h3>
+            <div className="space-y-2">
+              <p><span className="text-gray-500">URL:</span> {window.location.href}</p>
+              <p><span className="text-gray-500">Auth Ready:</span> {isAuthReady ? "YES" : "NO"}</p>
+              <p><span className="text-gray-500">User ID:</span> {auth.currentUser?.uid || "NONE"}</p>
+              <p><span className="text-gray-500">Auth Error:</span> {authError || "NONE"}</p>
+              <p><span className="text-gray-500">Game State:</span> {gameState}</p>
+              <p><span className="text-gray-500">Firestore Offline:</span> {isFirestoreOffline ? "YES" : "NO"}</p>
+            </div>
+            <button onClick={() => setShowDebug(false)} className="mt-6 w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-colors">إغلاق</button>
+          </div>
+        </div>
+      )}
+
       <div className="fixed inset-0 pointer-events-none z-0 halftone-bg"></div>
       <SettingsModal />
       
@@ -285,51 +350,67 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <header className="vintage-panel sticky top-0 z-50 relative border-x-0 border-t-0 rounded-none">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <motion.div 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-4 cursor-pointer group" 
-            onClick={handleReset}
-          >
-            <div className="w-14 h-14 bg-[var(--color-primary-gold)] rounded-xl flex items-center justify-center text-[var(--color-ink-black)] border-4 border-[var(--color-ink-black)] group-hover:rotate-12 transition-transform shadow-[4px_4px_0px_var(--color-ink-black)]">
-              <CartoonRocket size={32} />
-            </div>
-            <div className="flex flex-col">
-              <h1 className="text-3xl font-bold text-[var(--color-ink-black)] tracking-tight leading-none vintage-text">ومضة</h1>
-            </div>
-          </motion.div>
-          
-          <div className="flex items-center gap-3">
-            {gameState !== 'config' && gameState !== 'loading' && gameState !== 'library' && (
-              <button 
-                onClick={handleReset} 
-                className="vintage-button bg-[var(--color-primary-red)] text-white px-6 py-3 rounded-xl text-md flex items-center gap-3"
-              >
-                <CartoonX size={24} /> إلغاء
-              </button>
-            )}
-            {gameState === 'config' && (
-              <button 
-                onClick={() => setGameState('library')} 
-                className="vintage-button px-5 py-2.5 text-sm flex items-center gap-2"
-              >
-                <CartoonBook size={16} /> مكتبتي
-              </button>
-            )}
-            <button 
-              onClick={() => setIsSettingsOpen(true)} 
-              className="vintage-button w-18 h-18 flex items-center justify-center rounded-2xl"
-              title="الإعدادات"
+      {gameState !== 'remote' && (
+        <header className="vintage-panel sticky top-0 z-50 relative border-x-0 border-t-0 rounded-none">
+          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-4 cursor-pointer group" 
+              onClick={() => {
+                playSound('click');
+                handleReset();
+              }}
             >
-              <CartoonGear size={44} className="animate-spin-slow" />
-            </button>
+              <div className="w-14 h-14 bg-[var(--color-primary-gold)] rounded-xl flex items-center justify-center text-[var(--color-ink-black)] border-4 border-[var(--color-ink-black)] group-hover:rotate-12 transition-transform shadow-[4px_4px_0px_var(--color-ink-black)]">
+                <CartoonRocket size={32} />
+              </div>
+              <div className="flex flex-col">
+                <h1 className="text-3xl font-bold text-[var(--color-ink-black)] tracking-tight leading-none vintage-text">ومضة</h1>
+              </div>
+            </motion.div>
+            
+            <div className="flex items-center gap-3">
+              {gameState !== 'config' && gameState !== 'loading' && gameState !== 'library' && (
+                <button 
+                  onClick={() => {
+                    playSound('click');
+                    handleReset();
+                  }} 
+                  className="vintage-button bg-[var(--color-primary-red)] text-white px-6 py-3 rounded-xl text-md flex items-center gap-3"
+                >
+                  <CartoonX size={24} /> إلغاء
+                </button>
+              )}
+              {gameState === 'config' && (
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      playSound('click');
+                      setGameState('library');
+                    }} 
+                    className="vintage-button px-5 py-2.5 text-sm flex items-center gap-2"
+                  >
+                    <CartoonBook size={16} /> مكتبتي
+                  </button>
+                </div>
+              )}
+              <button 
+                onClick={() => {
+                  playSound('click');
+                  setIsSettingsOpen(true);
+                }} 
+                className="vintage-button w-18 h-18 flex items-center justify-center rounded-2xl"
+                title="الإعدادات"
+              >
+                <CartoonGear size={44} className="animate-spin-slow" />
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-      <main className="container mx-auto px-4 py-12 max-w-7xl relative z-10">
+      <main className={`${gameState === 'remote' ? 'w-full h-full' : 'container mx-auto px-4 py-12 max-w-7xl'} relative z-10`}>
         <AnimatePresence mode="wait">
           {!isAuthReady ? (
             <motion.div 
@@ -382,11 +463,11 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {!authError && gameState === 'remote' && <RemoteBuzzer />}
+              {!authError && isAuthReady && gameState === 'remote' && <RemoteBuzzer />}
               
-              {!authError && gameState === 'config' && <ConfigScreen onStart={handleStartGame} />}
+              {!authError && isAuthReady && gameState === 'config' && <ConfigScreen onStart={handleStartGame} />}
               
-              {!authError && gameState === 'library' && <LibraryScreen onPlaySet={handlePlaySavedSet} onClose={() => setGameState('config')} />}
+              {!authError && isAuthReady && gameState === 'library' && <LibraryScreen onPlaySet={handlePlaySavedSet} onClose={() => setGameState('config')} />}
               
               {gameState === 'loading' && (
                 <div className="flex flex-col items-center justify-center py-32 space-y-12">

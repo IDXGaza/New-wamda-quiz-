@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GameConfig, Player, Question, Difficulty } from '../types';
+import { updateQuestionStats } from '../services/vaultService';
 import { 
   CartoonCheck, 
   CartoonX, 
@@ -25,13 +26,25 @@ const TrueFalseScreen: React.FC<Props> = ({ config, questions, players: initialP
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const questionStartTime = React.useRef(Date.now());
 
   const currentQuestion = questions[currentIndex];
+
+  useEffect(() => {
+    questionStartTime.current = Date.now();
+  }, [currentIndex]);
 
   const handleAnswer = (answer: string) => {
     if (gameState !== 'question') return;
 
     const correct = currentQuestion.answer.trim() === answer;
+    
+    // Tracking
+    const timeSpentMs = Date.now() - questionStartTime.current;
+    if (currentQuestion.id && !currentQuestion.id.startsWith('custom') && !currentQuestion.id.startsWith('manual')) {
+      updateQuestionStats(currentQuestion.id, correct, timeSpentMs).catch(err => console.error("Vault update failed", err));
+    }
+
     setSelectedAnswer(answer);
     setIsCorrect(correct);
     
@@ -145,14 +158,20 @@ const TrueFalseScreen: React.FC<Props> = ({ config, questions, players: initialP
             {gameState === 'question' ? (
               <div className="grid grid-cols-2 gap-4 md:gap-6">
                 <button
-                  onClick={() => handleAnswer('صواب')}
+                  onClick={() => {
+                    playSound('click');
+                    handleAnswer('صواب');
+                  }}
                   className="vintage-button py-6 md:py-8 bg-[var(--color-primary-green)] text-white text-2xl md:text-3xl font-black flex flex-col items-center gap-2"
                 >
                   <CartoonCheck size={40} className="md:w-12 md:h-12" />
                   <span>صواب</span>
                 </button>
                 <button
-                  onClick={() => handleAnswer('خطأ')}
+                  onClick={() => {
+                    playSound('click');
+                    handleAnswer('خطأ');
+                  }}
                   className="vintage-button py-6 md:py-8 bg-[var(--color-primary-red)] text-white text-2xl md:text-3xl font-black flex flex-col items-center gap-2"
                 >
                   <CartoonX size={40} className="md:w-12 md:h-12" />
@@ -195,7 +214,10 @@ const TrueFalseScreen: React.FC<Props> = ({ config, questions, players: initialP
                 )}
 
                 <button
-                  onClick={nextQuestion}
+                  onClick={() => {
+                    playSound('click');
+                    nextQuestion();
+                  }}
                   className="vintage-button w-full py-4 md:py-6 bg-[var(--color-primary-gold)] text-[var(--color-ink-black)] text-xl md:text-2xl font-black flex items-center justify-center gap-3 md:gap-4"
                 >
                   <span>السؤال التالي</span>

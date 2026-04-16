@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { GameConfig, Player, Question } from '../types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { GameConfig, Player, Question, GameMode } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
+import { generateQuestions } from '../services/geminiService';
+import { updateQuestionStats } from '../services/vaultService';
+import { playSound } from '../utils/sound';
 import { 
   CartoonTrophy, 
   CartoonTimer, 
   CartoonCheck, 
   CartoonX, 
   CartoonSkip, 
-  CartoonEye 
+  CartoonEye,
+  CartoonBot
 } from './CartoonIcons';
 
 interface Props {
@@ -17,26 +21,77 @@ interface Props {
   onFinish: (players: Player[]) => void;
 }
 
-const TimedChallengeScreen: React.FC<Props> = ({ config, questions, players: initialPlayers, onFinish }) => {
+const TimedChallengeScreen: React.FC<Props> = ({ config, questions: initialQuestions, players: initialPlayers, onFinish }) => {
   const { settings } = useSettings();
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
+  const [localQuestions, setLocalQuestions] = useState<Question[]>(initialQuestions);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(settings.timedDuration);
   const [gameState, setGameState] = useState<'ready' | 'playing' | 'turn_finished' | 'finished'>('ready');
   const [revealed, setRevealed] = useState(false);
   const [roundScore, setRoundScore] = useState(0);
+  const [isFetching, setIsFetching] = useState(false);
+  const fetchingRef = useRef(false);
+  const questionStartTime = useRef(Date.now());
 
-  const activeQuestion = questions[currentQuestionIndex];
+  const activeQuestion = localQuestions[currentQuestionIndex];
   const currentPlayer = players[currentPlayerIndex];
+
+  useEffect(() => {
+    if (activeQuestion) {
+      setRevealed(false);
+      questionStartTime.current = Date.now();
+    }
+  }, [activeQuestion]);
+  useEffect(() => {
+    const fetchMore = async () => {
+      if (fetchingRef.current || localQuestions.length - currentQuestionIndex > 5) return;
+      
+      fetchingRef.current = true;
+      setIsFetching(true);
+      try {
+        const excludeAnswers = localQuestions.map(q => q.answer);
+        const newQuestions = await generateQuestions(
+          config.topic || 'عام',
+          5,
+          config.questionTypes,
+          GameMode.TIMED,
+          config.difficulty,
+          settings.aiModel,
+          config.categories,
+          excludeAnswers
+        );
+        
+        if (newQuestions && newQuestions.length > 0) {
+          setLocalQuestions(prev => [...prev, ...newQuestions]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch more questions for timed mode", error);
+      } finally {
+        fetchingRef.current = false;
+        setIsFetching(false);
+      }
+    };
+
+    if (gameState === 'playing') {
+      fetchMore();
+    }
+  }, [currentQuestionIndex, localQuestions.length, gameState, config, settings.aiModel]);
 
   useEffect(() => {
     let timer: number;
     if (gameState === 'playing' && timeLeft > 0) {
       timer = window.setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
+        setTimeLeft((prev) => {
+          if (prev <= 6 && prev > 1) {
+            playSound('tick');
+          }
+          return prev - 1;
+        });
       }, 1000);
     } else if (gameState === 'playing' && timeLeft <= 0) {
+      playSound('wrong');
       setGameState('turn_finished');
     }
     return () => clearInterval(timer);
@@ -49,7 +104,7 @@ const TimedChallengeScreen: React.FC<Props> = ({ config, questions, players: ini
   };
 
   const handleNextTurn = () => {
-    if (currentPlayerIndex < players.length - 1 && currentQuestionIndex < questions.length) {
+    if (currentPlayerIndex < players.length - 1) {
       setCurrentPlayerIndex(prev => prev + 1);
       setGameState('ready');
     } else {
@@ -58,7 +113,16 @@ const TimedChallengeScreen: React.FC<Props> = ({ config, questions, players: ini
   };
 
   const handleAnswer = useCallback((isCorrect: boolean) => {
+    // Tracking
+    const now = Date.now();
+    const timeSpentMs = now - questionStartTime.current;
+    if (activeQuestion?.id && !activeQuestion.id.startsWith('fb-')) {
+      updateQuestionStats(activeQuestion.id, isCorrect, timeSpentMs).catch(err => console.error("Vault update failed", err));
+    }
+    questionStartTime.current = now;
+
     if (isCorrect) {
+      playSound('correct');
       const points = activeQuestion?.points || 100;
       setRoundScore(prev => prev + points);
       setPlayers(prev => prev.map((p, idx) => {
@@ -67,15 +131,13 @@ const TimedChallengeScreen: React.FC<Props> = ({ config, questions, players: ini
         }
         return p;
       }));
+    } else {
+      playSound('wrong');
     }
 
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-      setRevealed(false);
-    } else {
-      setGameState('finished');
-    }
-  }, [activeQuestion, currentQuestionIndex, questions.length, currentPlayerIndex]);
+    setCurrentQuestionIndex(prev => prev + 1);
+    setRevealed(false);
+  }, [activeQuestion, currentPlayerIndex]);
 
   const renderWinnerModal = () => {
     if (gameState !== 'finished') return null;
@@ -207,7 +269,7 @@ const TimedChallengeScreen: React.FC<Props> = ({ config, questions, players: ini
             <div className="space-y-6 md:space-y-8 mt-4 md:mt-6 bg-[var(--color-off-white)]/50 p-6 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] border-4 border-[var(--color-ink-black)] shadow-[inner_4px_4px_0_rgba(0,0,0,0.1)]">
               <div className="flex flex-wrap justify-center gap-3 md:gap-4">
                 <p className="px-4 md:px-6 py-1 md:py-2 bg-[var(--color-primary-blue)] text-[var(--color-off-white)] border-2 md:border-4 border-[var(--color-ink-black)] rounded-lg md:rounded-xl font-display tracking-widest uppercase text-[10px] md:text-sm shadow-[3px_3px_0_var(--color-ink-black)] md:shadow-[4px_4px_0_var(--color-ink-black)]">
-                  السؤال {currentQuestionIndex + 1} من {questions.length}
+                  السؤال {currentQuestionIndex + 1}
                 </p>
                 <p className="px-4 md:px-6 py-1 md:py-2 bg-[var(--color-primary-gold)] text-[var(--color-ink-black)] border-2 md:border-4 border-[var(--color-ink-black)] rounded-lg md:rounded-xl font-display tracking-widest uppercase text-[10px] md:text-sm shadow-[3px_3px_0_var(--color-ink-black)] md:shadow-[4px_4px_0_var(--color-ink-black)]">
                   {activeQuestion.category}
@@ -217,6 +279,13 @@ const TimedChallengeScreen: React.FC<Props> = ({ config, questions, players: ini
               <h3 className="text-3xl md:text-6xl font-display text-[var(--color-ink-black)] leading-tight drop-shadow-[1px_1px_0_rgba(0,0,0,0.1)] md:drop-shadow-[2px_2px_0_rgba(0,0,0,0.1)]">
                 {activeQuestion.text}
               </h3>
+
+              {isFetching && localQuestions.length - currentQuestionIndex < 2 && (
+                <div className="flex items-center justify-center gap-2 text-[var(--color-bg-dark)] font-bold animate-pulse">
+                  <CartoonBot size={20} className="animate-spin-slow" />
+                  <span>جاري تحضير المزيد من الأسئلة...</span>
+                </div>
+              )}
 
               {!revealed ? (
                 <div className="pt-6 md:pt-10 flex flex-col gap-4 md:gap-6">

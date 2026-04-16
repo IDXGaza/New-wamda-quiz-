@@ -1,6 +1,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question, QuestionType, GameMode, Difficulty } from "../types";
 
+import { 
+  getQuestionsFromVault, 
+  saveToVault 
+} from "./vaultService";
+
 const ARABIC_ALPHABET = "أبتثجحخدذرزسشصضطظعغفقكلمنهوي".split("");
 
 const shuffleArray = <T>(array: T[]): T[] => {
@@ -86,7 +91,7 @@ export const extractJson = (text: string): string => {
 
 const getDifficultyText = (diff: Difficulty) => {
   switch (diff) {
-    case Difficulty.EASY: return "سهلة ومباشرة، مناسبة لجميع الفئات العمرية والمعلومات العامة الأساسية.";
+    case Difficulty.EASY: return "سهلة ومباشرة (مستوى 3-4 من 10)، مناسبة لجميع الفئات العمرية والمعلومات العامة الأساسية.";
     case Difficulty.MEDIUM: return "متوسطة الصعوبة للمثقف العام. تتطلب معرفة عامة جيدة، استنتاجاً منطقياً، ومعلومات غير شائعة.";
     case Difficulty.HARD: return "تحدٍ حقيقي للمثقفين. تتطلب حقائق نادرة، معلومات دقيقة، أو ربطاً ذكياً بين المفاهيم. تجنب البديهيات تماماً.";
     default: return "متوازنة";
@@ -156,6 +161,12 @@ export const generateQuestions = async (
   const ai = getAI();
   const difficultyContext = getDifficultyText(difficulty);
 
+  // Attempt to fetch from vault first
+  const vaultQuestions = await getQuestionsFromVault(topic, numQuestions, mode, difficulty);
+  if (vaultQuestions.length >= numQuestions) {
+    return vaultQuestions.slice(0, numQuestions);
+  }
+
   const generateSingleBatch = async (batchNum: number, batchStartIdx: number, batchLetters?: string[], category?: string): Promise<Question[]> => {
     // Take the most recent 300 exclusions to prevent repetition
     const limitedExclusions = excludedAnswers ? excludedAnswers.slice(0, 300) : [];
@@ -173,6 +184,16 @@ export const generateQuestions = async (
     ];
     const randomAngle = randomAngles[Math.floor(Math.random() * randomAngles.length)];
 
+    const sustainabilityInstruction = `
+مهم جداً: صغ الأسئلة بطريقة موسوعية مستدامة (Evergreen Content).
+1. تجنب الأحداث الجارية التي تنتهي صلاحيتها بسرعة (مثل نتائج مباريات اليوم، أسعار العملات اللحظية، أو أخبار الساعة).
+2. اجعل السؤال قابلاً للتقسيم وإعادة التدوير:
+   - معلومة قصيرة ومباشرة (لمسابقة الوقت).
+   - سؤال فئة غني للمعلومات (للجيبوردي).
+   - سؤال حرف دقيق (للشبكة).
+3. التنوع اللغوي: استخدم مفردات وتراكيب تجعل التعرف على السؤال ممتعاً في كل مرة يظهر فيها بنمط مختلف.
+`;
+
     const isTrueFalse = types.includes(QuestionType.TRUE_FALSE);
     const isTrueFalseMode = mode === GameMode.TRUE_FALSE;
     const trueFalseMechanism = (isTrueFalse || isTrueFalseMode) ? `
@@ -184,7 +205,7 @@ export const generateQuestions = async (
 5. يمنع منعاً باتاً ترك حقل "answer" فارغاً.
 ` : "";
 
-    const varietyInstruction = `عامل التنوع (مهم): اختر زوايا غير متوقعة للموضوع. إذا كان الموضوع "تاريخ"، لا تركز فقط على الحروب، بل ابحث عن اختراعات، شخصيات غريبة، أو أحداث اجتماعية نادرة.`;
+    const varietyInstruction = `عامل التنوع (مهم): اختر زوايا غير متوقعة للموضوع. إذا كان الموضوع "تاريخ"، لا تركز فقط على الحروب، بل ابحث عن اختراعات، شخصيات غريبة، أو أحداث اجتماعية نادرة. ${sustainabilityInstruction}`;
 
     const newQuestionMechanism = `آلية صياغة الأسئلة (مهم جداً):
 ${trueFalseMechanism}
@@ -239,6 +260,7 @@ ${isTrueFalseMode ? "مهم جداً: هذا النمط مخصص للحقائق 
 - answer: الإجابة الصحيحة (يجب أن تبدأ بالحرف المطلوب).
 - letter: الحرف المطلوب.
 - difficulty: مستوى الصعوبة.
+- hint: تلميح ذكي وبسيط يساعد في الوصول للإجابة دون ذكرها صراحة.
 - explanation: شرح بسيط للإجابة.
 
 تنبيه هام: لا تترك حقل "answer" فارغاً أبداً تحت أي ظرف.`;
@@ -273,7 +295,7 @@ ${isTrueFalseMode ? "مهم جداً: هذا النمط مخصص للحقائق 
 تنبيه هام: لا تترك حقل "answer" فارغاً أبداً.`;
       schema.items.required.push("category", "points");
     } else {
-      const buzzerContext = mode === GameMode.BUZZER ? "اجعل الأسئلة سريعة وممتعة، مناسبة لسرعة البديهة." : "";
+      const buzzerContext = mode === GameMode.BUZZER ? "مهم جداً: هذا النمط مخصص للسرعة، لذا يجب أن تكون الأسئلة في الجانب السهل (مستوى 3-4 من 10). اجعل الإجابات كلمات قصيرة وواضحة جداً، وتجنب التعقيد أو الأسئلة التي تتطلب تفكيراً طويلاً." : "";
       const silentGuessContext = mode === GameMode.SILENT_GUESS ? "مهم جداً: اجعل الكلمات عشوائية تماماً ومن مواضيع متنوعة جداً (لا تلتزم بموضوع واحد). يرجى ملء حقل 'category' بنوع الكلمة." : "";
       promptText = `أنشئ ${batchNum} سؤالاً حول "${topic}" بمستوى "${difficultyContext}".
 ${silentGuessContext}
@@ -283,7 +305,8 @@ ${buzzerContext}
 معايير الجودة:
 1. ${newQuestionMechanism}
 2. الملاءمة الثقافية.
-3. التنوع الإبداعي: ${randomAngle}`;
+3. التنوع الإبداعي: ${randomAngle}
+4. العدد المطلوب: يجب توليد ${batchNum} سؤالاً بالضبط دون نقص.`;
 
       systemInstruction = `أنت صانع محتوى إبداعي ومصمم مسابقات محترف.
 يجب عليك دائماً إرجاع مصفوفة JSON كاملة تحتوي على الحقول:
@@ -395,7 +418,7 @@ ${buzzerContext}
             questionPoints = q.points || ((idx % 5) + 1) * 100;
           }
 
-          return {
+          const newQuestion = {
             id: `q-${Date.now()}-${globalIdx}-${Math.random().toString(36).substr(2, 5)}`,
             text: q.text || "",
             answer: (isTrueFalse || isTrueFalseMode) 
@@ -410,6 +433,11 @@ ${buzzerContext}
             difficulty: (q.difficulty as Difficulty) || difficulty,
             emojis: q.emojis
           };
+          
+          // Save new questions to vault for future recycling
+          saveToVault(newQuestion).catch(err => console.error("Vault save failed", err));
+          
+          return newQuestion;
         }));
       } catch (error: any) {
         const errorStr = String(error?.message || error || "");
@@ -451,15 +479,24 @@ ${buzzerContext}
       );
       
       categoryBatches.forEach(batch => allQuestions.push(...batch));
-    } else if (numQuestions > 10) {
-      for (let i = 0; i < numQuestions; i += 10) {
-        const batchSize = Math.min(10, numQuestions - i);
-        const batch = await generateSingleBatch(batchSize, i);
-        allQuestions.push(...batch);
-      }
     } else {
-      const batch = await generateSingleBatch(numQuestions, 0);
-      allQuestions.push(...batch);
+      // For other modes, we use a loop to ensure we get enough questions
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (allQuestions.length < numQuestions && attempts < maxAttempts) {
+        const remaining = numQuestions - allQuestions.length;
+        const batchSize = Math.min(10, remaining);
+        try {
+          const batch = await generateSingleBatch(batchSize, allQuestions.length);
+          allQuestions.push(...batch);
+        } catch (err) {
+          console.error(`Batch generation failed at attempt ${attempts + 1}:`, err);
+          if (allQuestions.length > 0) break; // If we have some, return them
+          throw err;
+        }
+        attempts++;
+      }
     }
 
     if (allQuestions.length === 0) {
@@ -757,6 +794,7 @@ export const fetchSingleQuestion = async (
 يجب عليك إرجاع كائن JSON واحد فقط يحتوي على:
 - text: نص السؤال.
 - answer: الإجابة الصحيحة (يجب أن تبدأ بحرف ${letter}).
+- hint: تلميح ذكي وبسيط يساعد في الوصول للإجابة دون ذكرها صراحة.
 
 تنبيه: لا تترك حقل "answer" فارغاً أبداً.`;
 
@@ -764,7 +802,8 @@ export const fetchSingleQuestion = async (
     type: Type.OBJECT,
     properties: {
       text: { type: Type.STRING, description: "نص السؤال" },
-      answer: { type: Type.STRING, description: "الإجابة" }
+      answer: { type: Type.STRING, description: "الإجابة" },
+      hint: { type: Type.STRING, description: "تلميح" }
     },
     required: ["text", "answer"]
   };

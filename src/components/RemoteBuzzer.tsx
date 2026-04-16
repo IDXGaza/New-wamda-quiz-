@@ -1,214 +1,156 @@
-
 import React, { useState, useEffect } from 'react';
+import { doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { handleFirestoreError, OperationType } from '../services/firestoreUtils';
+import { handleFirestoreError, OperationType } from '../lib/firestoreUtils';
 import { 
-  CartoonLock, 
-  CartoonAlert, 
-  CartoonUser, 
-  CartoonRocket, 
   CartoonLightning, 
-  CartoonCheck, 
-  CartoonHome
+  CartoonUser, 
+  CartoonGear,
+  CartoonCheck
 } from './CartoonIcons';
+import { motion, AnimatePresence } from 'motion/react';
+import { playSound } from '../utils/sound';
 
 const RemoteBuzzer: React.FC = () => {
-  const [roomId, setRoomId] = useState<string | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<{id: string, name: string, color: string} | null>(null);
-  const [status, setStatus] = useState<'idle' | 'pressed' | 'error' | 'connecting' | 'locked'>('connecting');
-  const [playerNameInput, setPlayerNameInput] = useState('');
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-
-  const handleAuth = () => {
-    setAuthError(null);
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        signInAnonymously(auth).catch((error: any) => {
-          console.error("Auth Error Details:", error.code, error.message);
-          if (error.code === 'auth/admin-restricted-operation' || error.code === 'auth/operation-not-allowed') {
-            setAuthError("عذراً، يجب تفعيل 'Anonymous Authentication' في لوحة تحكم Firebase (Authentication > Sign-in method).");
-          } else if (error.code === 'auth/network-request-failed') {
-            setAuthError("فشل الاتصال بخوادم التحقق. يرجى التأكد من اتصالك بالإنترنت.");
-          } else {
-            setAuthError(`خطأ في الاتصال بـ Firebase: ${error.message}`);
-          }
-        });
-      } else {
-        setIsAuthReady(true);
-        setAuthError(null);
-      }
-    });
-    return unsubscribe;
-  };
+  const [roomId, setRoomId] = useState('');
+  const [playerName, setPlayerName] = useState('');
+  const [playerColor] = useState(() => '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'));
+  const [isJoined, setIsJoined] = useState(false);
+  const [roomState, setRoomState] = useState<any>(null);
+  const [isBuzzed, setIsBuzzed] = useState(false);
+  const [playerScore, setPlayerScore] = useState(0);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const unsubscribe = handleAuth();
-    return () => unsubscribe();
-  }, []);
+    if (!isJoined || !roomId || !auth.currentUser) return;
 
-  const handleRetryAuth = () => {
-    setIsAuthReady(false);
-    setAuthError(null);
-    signInAnonymously(auth).catch((error: any) => {
-      if (error.code === 'auth/admin-restricted-operation') {
-        setAuthError("عذراً، يجب تفعيل 'Anonymous Authentication' في لوحة تحكم Firebase.");
-      } else if (error.code === 'auth/network-request-failed') {
-        setAuthError("فشل الاتصال بخوادم التحقق. يرجى التأكد من اتصالك بالإنترنت أو عدم وجود جدار حماية يمنع الاتصال.");
-      } else {
-        setAuthError(error.message);
+    const playerRef = doc(db, 'rooms', roomId, 'players', auth.currentUser.uid);
+    const unsub = onSnapshot(playerRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setPlayerScore(snapshot.data().score || 0);
       }
     });
-  };
+
+    return () => unsub();
+  }, [isJoined, roomId]);
 
   useEffect(() => {
-    if (!isAuthReady) return;
-    
     const searchParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
-    const rid = searchParams.get('roomId') || hashParams.get('roomId');
-    
-    if (rid && isAuthReady && auth.currentUser) {
-      setRoomId(rid);
-      setStatus('idle');
-      
-      const roomRef = doc(db, 'rooms', rid);
-      const unsubscribe = onSnapshot(roomRef, (snapshot) => {
-        if (!snapshot.exists()) {
-          setStatus('error');
-          return;
-        }
-        
+    const id = searchParams.get('roomId') || hashParams.get('roomId');
+    if (id) setRoomId(id);
+  }, []);
+
+  useEffect(() => {
+    if (!isJoined || !roomId) return;
+
+    const roomRef = doc(db, 'rooms', roomId);
+    const unsub = onSnapshot(roomRef, (snapshot) => {
+      if (snapshot.exists()) {
         const data = snapshot.data();
-        if (data.buzzedPlayerId) {
-          if (selectedPlayer && data.buzzedPlayerId === selectedPlayer.id) {
-            setStatus('pressed');
-          } else {
-            setStatus('locked');
-          }
-        } else {
-          setStatus('idle');
+        setRoomState(data);
+        
+        // Reset local buzz state if room buzz is cleared
+        if (data.buzzedPlayerId === null) {
+          setIsBuzzed(false);
         }
-      }, (error) => {
-        handleFirestoreError(error, OperationType.GET, `rooms/${rid}`);
-      });
+      } else {
+        setError('الغرفة غير موجودة أو تم إغلاقها');
+        setIsJoined(false);
+      }
+    }, (err) => handleFirestoreError(err, OperationType.GET, `rooms/${roomId}`));
 
-      return () => unsubscribe();
-    }
-  }, [selectedPlayer, isAuthReady]);
+    return () => unsub();
+  }, [isJoined, roomId]);
 
-  const [joinedAt] = useState(() => new Date().toISOString());
-
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!playerNameInput.trim() || !roomId || !auth.currentUser) return;
-    
-    const newPlayer = {
-      id: auth.currentUser.uid,
-      name: playerNameInput.trim(),
-      color: '#38bdf8' // Default color
-    };
-    
-    setSelectedPlayer(newPlayer);
-    
-    // Add player to room
-    const playerPath = `rooms/${roomId}/players/${auth.currentUser.uid}`;
-    setDoc(doc(db, playerPath), {
-      name: newPlayer.name,
-      color: newPlayer.color,
-      score: 0,
-      joinedAt: joinedAt
-    }).catch(err => handleFirestoreError(err, OperationType.WRITE, playerPath));
+    if (!playerName.trim() || !roomId.trim() || !auth.currentUser) return;
+
+    try {
+      const playerRef = doc(db, 'rooms', roomId, 'players', auth.currentUser.uid);
+      await setDoc(playerRef, {
+        name: playerName,
+        color: playerColor,
+        score: 0,
+        joinedAt: new Date().toISOString()
+      });
+      setIsJoined(true);
+      setError('');
+    } catch (err: any) {
+      if (err.message?.includes('permission')) {
+        handleFirestoreError(err, OperationType.WRITE, `rooms/${roomId}/players/${auth.currentUser.uid}`);
+      }
+      setError('فشل الانضمام للغرفة. تأكد من صحة الرمز.');
+    }
   };
 
-  const handlePress = () => {
-    if (!selectedPlayer || !roomId || status !== 'idle') return;
+  const handleBuzz = async () => {
+    if (!isJoined || !roomId || !auth.currentUser || roomState?.gameState !== 'question' || roomState?.buzzedPlayerId) return;
 
-    setStatus('pressed');
-    
-    // Update room with buzzed player
-    const roomPath = `rooms/${roomId}`;
-    updateDoc(doc(db, roomPath), {
-      buzzedPlayerId: selectedPlayer.id,
-      buzzedAt: new Date().toISOString()
-    }).catch(err => {
-      console.log("Buzz rejected (likely someone else was faster):", err.message);
-      // We do not call handleFirestoreError here because a rejection is expected
-      // if another player buzzed first (enforced by security rules).
-      // The onSnapshot listener will update the status to 'locked' shortly.
-    });
-    
-    if (window.navigator.vibrate) window.navigator.vibrate(200);
+    try {
+      playSound('buzzer');
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        buzzedPlayerId: auth.currentUser.uid,
+        buzzedAt: new Date().toISOString()
+      });
+      setIsBuzzed(true);
+      
+      // Haptic feedback if available
+      if ('vibrate' in navigator) {
+        navigator.vibrate(200);
+      }
+    } catch (err) {
+      console.error("Buzz failed", err);
+      handleFirestoreError(err, OperationType.UPDATE, `rooms/${roomId}`);
+    }
   };
 
-  const goHome = () => {
-    window.location.href = window.location.origin + window.location.pathname;
-  };
-
-  if (authError) {
+  if (!isJoined) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-[var(--color-bg-cream)]">
-        <div className="vintage-panel p-10 rounded-3xl max-w-md w-full">
-          <div className="w-24 h-24 bg-[var(--color-primary-red)]/20 rounded-full flex items-center justify-center border-4 border-[var(--color-ink-black)] mx-auto mb-6 shadow-[4px_4px_0_var(--color-ink-black)]">
-            <CartoonLock size={48} />
+      <div className="min-h-screen bg-[var(--color-bg-cream)] p-6 flex items-center justify-center font-sans" dir="rtl">
+        <div className="vintage-panel p-8 rounded-[2.5rem] w-full max-w-md border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] bg-white">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-[var(--color-primary-gold)] rounded-2xl border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] flex items-center justify-center mx-auto mb-4">
+              <CartoonLightning size={48} />
+            </div>
+            <h1 className="text-3xl font-display text-[var(--color-ink-black)]">سجل اسمك للمشاركة</h1>
+            <p className="text-sm font-bold opacity-60 mt-1">أدخل اسمك لتظهر للمضيف في المسابقة</p>
           </div>
-          <h2 className="text-3xl font-display text-[var(--color-ink-black)] mb-4">خطأ في المصادقة</h2>
-          <p className="text-[var(--color-bg-dark)] font-arabic font-bold mb-6">{authError}</p>
-          <div className="bg-[var(--color-primary-gold)]/20 p-4 rounded-2xl border-4 border-[var(--color-ink-black)] text-[var(--color-ink-black)] text-sm mb-6 font-arabic font-bold">
-            {authError.includes('Anonymous Authentication') 
-              ? 'يرجى إبلاغ منظم المسابقة بتفعيل "الدخول المجهول" (Anonymous Authentication) في إعدادات Firebase.'
-              : 'يرجى التأكد من اتصالك بالإنترنت والمحاولة مرة أخرى.'}
-          </div>
-          <div className="flex flex-col gap-4">
-            <button onClick={handleRetryAuth} className="w-full py-4 vintage-button rounded-xl font-display text-xl bg-[var(--color-primary-green)] text-white">إعادة المحاولة</button>
-            <button onClick={goHome} className="w-full py-4 vintage-button rounded-xl font-display text-xl">العودة للقائمة الرئيسية</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
-  if (!roomId) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-[var(--color-bg-cream)]">
-        <div className="vintage-panel p-10 rounded-3xl max-w-md w-full">
-          <div className="w-24 h-24 bg-[var(--color-primary-gold)]/20 rounded-full flex items-center justify-center border-4 border-[var(--color-ink-black)] mx-auto mb-6 shadow-[4px_4px_0_var(--color-ink-black)]">
-            <CartoonAlert size={48} />
-          </div>
-          <h2 className="text-3xl font-display text-[var(--color-ink-black)] mb-6">خطأ في الجلسة</h2>
-          <button onClick={goHome} className="w-full py-4 vintage-button rounded-xl font-display text-xl">العودة للقائمة الرئيسية</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!selectedPlayer) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-[var(--color-bg-cream)]">
-        <div className="w-full max-w-sm vintage-panel p-10 rounded-3xl text-center animate-fade-up">
-          <div className="w-24 h-24 bg-[var(--color-primary-blue)]/20 rounded-full flex items-center justify-center border-4 border-[var(--color-ink-black)] mx-auto mb-6 shadow-[4px_4px_0_var(--color-ink-black)]">
-            <CartoonUser size={48} />
-          </div>
-          <h2 className="text-3xl font-display text-[var(--color-ink-black)] mb-2">من المتسابق؟</h2>
-          <p className="text-[var(--color-primary-blue)] font-arabic font-bold text-sm mb-8 bg-[var(--color-primary-blue)]/10 inline-block px-4 py-1 rounded-full border-2 border-[var(--color-ink-black)]">أدخل اسمك للانضمام</p>
-          
           <form onSubmit={handleJoin} className="space-y-6">
-            <input 
-              type="text" 
-              value={playerNameInput}
-              onChange={(e) => setPlayerNameInput(e.target.value)}
-              placeholder="اسم المتسابق"
-              className="vintage-input w-full text-center"
-              required
-            />
-            <button
+            <div className="bg-[var(--color-primary-gold)]/10 p-4 rounded-2xl border-2 border-dashed border-[var(--color-primary-gold)] text-center mb-4">
+              <p className="text-xs font-bold text-[var(--color-bg-dark)]">رمز الغرفة</p>
+              <p className="text-2xl font-display text-[var(--color-primary-blue)] tracking-widest">{roomId}</p>
+            </div>
+
+            <div>
+              <label className="block text-lg font-bold mb-2">اسم المتسابق</label>
+              <div className="relative">
+                <input 
+                  value={playerName}
+                  onChange={e => setPlayerName(e.target.value)}
+                  className="w-full p-4 pr-12 rounded-xl border-4 border-[var(--color-ink-black)] font-bold text-xl"
+                  placeholder="أدخل اسمك هنا..."
+                  required
+                  maxLength={15}
+                />
+                <CartoonUser size={24} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-50" />
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-[var(--color-primary-red)] font-bold text-center bg-[var(--color-primary-red)]/10 p-3 rounded-lg border-2 border-[var(--color-primary-red)]">
+                {error}
+              </p>
+            ) }
+
+            <button 
               type="submit"
-              className="w-full py-4 vintage-button rounded-xl font-display text-xl flex items-center justify-center gap-3"
+              className="vintage-button w-full py-5 rounded-2xl text-2xl font-display bg-[var(--color-primary-green)] text-white shadow-[0_8px_0_#1a5d1a]"
             >
-              <span>انضمام الآن</span>
-              <CartoonRocket size={32} />
+              دخول المسابقة
             </button>
           </form>
         </div>
@@ -216,44 +158,103 @@ const RemoteBuzzer: React.FC = () => {
     );
   }
 
+  const canBuzz = roomState?.gameState === 'question' && !roomState?.buzzedPlayerId;
+  const someoneElseBuzzed = roomState?.buzzedPlayerId && roomState?.buzzedPlayerId !== auth.currentUser?.uid;
+  const iBuzzed = roomState?.buzzedPlayerId === auth.currentUser?.uid;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-between py-12 px-6 overflow-hidden relative bg-[var(--color-bg-cream)]">
-      <div className="text-center z-10 vintage-panel p-6 rounded-2xl animate-fade-down">
-        <p className="text-[var(--color-bg-dark)] text-xs font-display uppercase tracking-widest mb-2 bg-[var(--color-primary-gold)] px-3 py-1 rounded-lg border-2 border-[var(--color-ink-black)] inline-block">ركن المتسابق</p>
-        <h2 className="text-3xl font-display text-[var(--color-ink-black)] mb-3">{selectedPlayer.name}</h2>
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary-green)]/20 rounded-full border-2 border-[var(--color-ink-black)]">
-          <div className="w-2 h-2 bg-[var(--color-primary-green)] rounded-full animate-pulse"></div>
-          <span className="text-[var(--color-primary-green)] text-xs font-display uppercase tracking-widest">متصل</span>
+    <div className="min-h-screen bg-[var(--color-bg-cream)] flex flex-col font-sans overflow-hidden" dir="rtl">
+      {/* Header */}
+      <div className="bg-white border-b-4 border-[var(--color-ink-black)] p-4 flex justify-between items-center shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg border-2 border-[var(--color-ink-black)]" style={{ backgroundColor: playerColor }} />
+          <span className="font-bold text-lg">{playerName}</span>
+        </div>
+        <div className="bg-[var(--color-off-white)] px-4 py-1 rounded-full border-2 border-[var(--color-ink-black)] font-bold">
+          الغرفة: {roomId}
         </div>
       </div>
 
-      <div className="relative z-10 w-full flex justify-center">
-        <button
-          onClick={handlePress}
-          disabled={status !== 'idle'}
-          className={`relative w-64 h-64 md:w-80 md:h-80 rounded-full border-8 transition-all duration-300 flex flex-col items-center justify-center select-none touch-manipulation shadow-[8px_8px_0_var(--color-ink-black)] ${
-            status === 'pressed' 
-            ? 'bg-[var(--color-primary-green)]/40 border-[var(--color-ink-black)] scale-95' 
-            : status === 'locked'
-            ? 'bg-[var(--color-bg-dark)]/50 border-[var(--color-ink-black)] opacity-50 cursor-not-allowed'
-            : 'bg-[var(--color-primary-red)] border-[var(--color-ink-black)] hover:scale-[1.02] active:scale-95'
-          }`}
-        >
-          <span className="text-[var(--color-off-white)] mb-4">
-            {status === 'pressed' ? <CartoonCheck size={96} /> : status === 'locked' ? <CartoonLock size={96} /> : <CartoonLightning size={96} />}
-          </span>
-          <span className={`font-display text-3xl md:text-4xl tracking-widest ${status === 'pressed' ? 'text-[var(--color-off-white)]' : status === 'locked' ? 'text-[var(--color-bg-dark)]' : 'text-[var(--color-off-white)]'}`}>
-            {status === 'pressed' ? 'أنت الأسرع!' : status === 'locked' ? 'مغلق' : 'BUZZ'}
-          </span>
-        </button>
+      {/* Main Area */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 gap-8">
+        <AnimatePresence mode="wait">
+          {roomState?.gameState === 'waiting' ? (
+            <motion.div 
+              key="waiting"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.1 }}
+              className="text-center space-y-4"
+            >
+              <div className="w-32 h-32 bg-[var(--color-primary-gold)] rounded-[2rem] border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] flex items-center justify-center mx-auto animate-pulse">
+                <CartoonGear size={64} className="animate-spin-slow" />
+              </div>
+              <h2 className="text-3xl font-display text-[var(--color-ink-black)]">بانتظار بدء المضيف...</h2>
+              <p className="font-bold opacity-60">استعد! التحدي سيبدأ قريباً</p>
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="game"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="w-full max-w-sm flex flex-col items-center gap-10"
+            >
+              {/* Status Indicator */}
+              <div className={`w-full py-4 rounded-2xl border-4 border-[var(--color-ink-black)] text-center font-display text-2xl shadow-[4px_4px_0px_var(--color-ink-black)] transition-colors ${
+                canBuzz ? 'bg-[var(--color-primary-green)] text-white' : 
+                iBuzzed ? 'bg-[var(--color-primary-gold)] text-[var(--color-ink-black)]' :
+                someoneElseBuzzed ? 'bg-[var(--color-primary-red)] text-white' :
+                'bg-gray-200 text-gray-500'
+              }`}>
+                {canBuzz ? 'اضغط الآن!' : 
+                 iBuzzed ? 'لقد ضغطت أولاً!' :
+                 someoneElseBuzzed ? 'سبقك أحد المتسابقين!' :
+                 'انتظر السؤال...'}
+              </div>
+
+              {/* The Big Button */}
+              <button 
+                onClick={handleBuzz}
+                disabled={!canBuzz}
+                className={`relative w-64 h-64 rounded-full border-[8px] border-[var(--color-ink-black)] shadow-[0_12px_0_var(--color-ink-black)] active:translate-y-2 active:shadow-[0_4px_0_var(--color-ink-black)] transition-all flex items-center justify-center group ${
+                  canBuzz ? 'bg-[var(--color-primary-red)] cursor-pointer' : 'bg-gray-400 cursor-not-allowed grayscale'
+                }`}
+              >
+                <div className="absolute inset-4 rounded-full border-4 border-white/30" />
+                <CartoonLightning size={100} className={`transition-transform ${canBuzz ? 'group-hover:scale-110 group-active:scale-95' : ''}`} />
+                
+                {/* Visual Feedback for Buzz */}
+                <AnimatePresence>
+                  {iBuzzed && (
+                    <motion.div 
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1.5, opacity: 1 }}
+                      exit={{ scale: 2, opacity: 0 }}
+                      className="absolute inset-0 bg-white rounded-full flex items-center justify-center"
+                    >
+                      <CartoonCheck size={80} className="text-[var(--color-primary-green)]" />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </button>
+
+              {/* Score Display */}
+              <div className="bg-white p-6 rounded-[2rem] border-4 border-[var(--color-ink-black)] shadow-[6px_6px_0px_var(--color-ink-black)] w-full text-center">
+                <p className="text-sm font-bold opacity-60 mb-1">رصيدك الحالي</p>
+                <p className="text-5xl font-display text-[var(--color-primary-blue)]">
+                  {playerScore}
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      <div className="z-10 text-center vintage-panel p-4 rounded-xl">
-        <p className="text-[var(--color-ink-black)] text-sm font-arabic font-bold">
-          {status === 'idle' ? 'استعد للضغط فور ظهور السؤال!' : 
-           status === 'pressed' ? 'تم الضغط! بانتظار المقدم...' : 
-           status === 'locked' ? 'لقد سبقك متسابق آخر!' : ''}
-        </p>
+      {/* Footer Decoration */}
+      <div className="p-4 flex justify-center opacity-20">
+        <CartoonLightning size={24} />
+        <CartoonLightning size={24} />
+        <CartoonLightning size={24} />
       </div>
     </div>
   );

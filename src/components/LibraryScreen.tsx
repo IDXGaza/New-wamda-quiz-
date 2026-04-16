@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GameMode, Difficulty, QuestionType, SavedSet, Question, Player } from '../types';
 import { generateQuestions } from '../services/geminiService';
 import { useSettings } from '../contexts/SettingsContext';
+import { playSound } from '../utils/sound';
 import { 
   CartoonBook, 
   CartoonPlus, 
@@ -61,16 +62,19 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = (id: string) => {
+    playSound('click');
     setDeletingId(id);
   };
 
   const confirmDelete = (id: string) => {
+    playSound('click');
     const newSets = savedSets.filter(s => s.id !== id);
     saveSetsToLocal(newSets);
     setDeletingId(null);
   };
 
   const cancelDelete = () => {
+    playSound('click');
     setDeletingId(null);
   };
 
@@ -141,6 +145,7 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
 
   const handleStartPlay = () => {
     if (!selectedSetToPlay) return;
+    playSound('start');
     const finalPlayers: Player[] = playersConfig.map((p, i) => ({
       id: `p${i+1}`,
       name: p.name || `متسابق ${i+1}`,
@@ -163,7 +168,10 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
           <span>{selectedSetToPlay ? 'إعداد المتسابقين' : 'مكتبة المسابقات'}</span>
         </h2>
         <button 
-          onClick={() => selectedSetToPlay ? setSelectedSetToPlay(null) : onClose()} 
+          onClick={() => {
+            playSound('click');
+            selectedSetToPlay ? setSelectedSetToPlay(null) : onClose();
+          }} 
           className="w-14 h-14 bg-[var(--color-primary-red)] text-white rounded-2xl flex items-center justify-center transition-transform hover:scale-110 border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] active:translate-y-1 active:shadow-none"
         >
           {selectedSetToPlay ? <CartoonSkip size={32} className="rotate-180" /> : <CartoonX size={32} />}
@@ -216,7 +224,10 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
                 </div>
               ))}
             </div>
-            <button type="button" onClick={() => setPlayersConfig([...playersConfig, { name: `متسابق ${playersConfig.length + 1}`, color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0') }])} className="w-full py-4 border-4 border-dashed border-[var(--color-ink-black)] rounded-2xl text-[var(--color-bg-dark)] text-2xl font-display hover:bg-[var(--color-primary-gold)]/10 transition-all flex items-center justify-center gap-4">
+            <button type="button" onClick={() => {
+              playSound('click');
+              setPlayersConfig([...playersConfig, { name: `متسابق ${playersConfig.length + 1}`, color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0') }]);
+            }} className="w-full py-4 border-4 border-dashed border-[var(--color-ink-black)] rounded-2xl text-[var(--color-bg-dark)] text-2xl font-display hover:bg-[var(--color-primary-gold)]/10 transition-all flex items-center justify-center gap-4">
               <CartoonPlus size={32} />
               <span>إضافة متسابق</span>
             </button>
@@ -233,7 +244,10 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
       ) : !isCreating ? (
         <div className="space-y-8">
           <button 
-            onClick={() => setIsCreating(true)}
+            onClick={() => {
+              playSound('click');
+              setIsCreating(true);
+            }}
             className="w-full py-8 border-4 border-dashed border-[var(--color-primary-blue)] bg-[var(--color-primary-blue)]/10 rounded-[2.5rem] text-[var(--color-primary-blue)] font-display text-3xl hover:bg-[var(--color-primary-blue)]/20 transition-all flex items-center justify-center gap-6 shadow-[6px_6px_0px_var(--color-primary-blue)] active:translate-y-1 active:shadow-none"
           >
             <CartoonPlus size={48} />
@@ -279,7 +293,10 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
                   </div>
 
                   <button 
-                    onClick={() => setSelectedSetToPlay(set)}
+                    onClick={() => {
+                      playSound('click');
+                      setSelectedSetToPlay(set);
+                    }}
                     className="vintage-button w-full py-5 rounded-2xl font-display text-2xl flex items-center justify-center gap-4 bg-[var(--color-primary-gold)]"
                   >
                     <span>لعب هذه المجموعة</span>
@@ -327,16 +344,16 @@ const LibraryScreen: React.FC<Props> = ({ onPlaySet, onClose }) => {
               <div className="group">
                 <label className="block text-2xl font-display text-[var(--color-bg-dark)] mb-3">نظام اللعبة</label>
                 <div className="relative">
-                  <select 
-                    value={mode} onChange={e => setMode(e.target.value as GameMode)}
-                    className="w-full bg-[var(--color-bg-cream)] border-4 border-[var(--color-ink-black)] rounded-2xl p-5 font-display text-2xl shadow-[4px_4px_0px_var(--color-ink-black)] appearance-none focus:outline-none"
-                  >
-                    <option value={GameMode.POINTS}>نقاط</option>
-                    <option value={GameMode.HEX_GRID}>شبكة الحروف</option>
-                    <option value={GameMode.GRID}>الشبكة الكلاسيكية</option>
-                    <option value={GameMode.BUZZER}>تحدي البازر</option>
-                    <option value={GameMode.TIMED}>تحدي الوقت</option>
-                  </select>
+                    <select 
+                      value={mode} onChange={e => setMode(e.target.value as GameMode)}
+                      className="w-full bg-[var(--color-bg-cream)] border-4 border-[var(--color-ink-black)] rounded-2xl p-5 font-display text-2xl shadow-[4px_4px_0px_var(--color-ink-black)] appearance-none focus:outline-none"
+                    >
+                      <option value={GameMode.POINTS}>نقاط</option>
+                      <option value={GameMode.HEX_GRID}>شبكة الحروف</option>
+                      <option value={GameMode.GRID}>الشبكة الكلاسيكية</option>
+                      <option value={GameMode.BUZZER}>تحدي البازر</option>
+                      <option value={GameMode.TIMED}>تحدي الوقت</option>
+                    </select>
                   <div className="absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none">
                     <CartoonGear size={32} className="text-[var(--color-bg-dark)]" />
                   </div>

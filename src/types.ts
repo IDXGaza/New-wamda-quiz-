@@ -34,6 +34,14 @@ export interface Question {
   type: QuestionType;
   difficulty: Difficulty;
   emojis?: string[];
+  
+  // Vault Metadata
+  times_played?: number;
+  last_played_at?: number;
+  avg_time_to_answer?: number;
+  correct_count?: number;
+  mastered?: boolean;
+  real_difficulty_score?: number; // 0-1000
 }
 
 export enum PowerType {

@@ -14,8 +14,8 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || process.env.API_KEY || env.GEMINI_API_KEY || env.API_KEY || ''),
         'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || process.env.API_KEY || env.GEMINI_API_KEY || env.API_KEY || ''),
-        'process.env.APP_URL': JSON.stringify(process.env.APP_URL || env.APP_URL || 'https://ais-dev-ied55hydlnq3gp45zze4bx-104390108971.europe-west2.run.app'),
-        'process.env.SHARED_APP_URL': JSON.stringify(process.env.SHARED_APP_URL || env.SHARED_APP_URL || 'https://ais-pre-ied55hydlnq3gp45zze4bx-104390108971.europe-west2.run.app')
+        'process.env.APP_URL': JSON.stringify(process.env.APP_URL || env.APP_URL || ''),
+        'process.env.SHARED_APP_URL': JSON.stringify(process.env.SHARED_APP_URL || env.SHARED_APP_URL || '')
       },
       resolve: {
         alias: {

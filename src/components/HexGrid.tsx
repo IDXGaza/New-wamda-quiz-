@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { playSound } from '../utils/sound';
 import { CartoonSnowflake, CartoonShield, CartoonGhost } from './CartoonIcons';
 import { Question, Player, PowerType } from '../types';
 
@@ -159,7 +160,10 @@ const HexGrid: React.FC<HexGridProps> = ({
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: (rIdx * 0.1) + (cIdx * 0.05), type: 'spring' }}
                   className={`hex-group ${activeClass} ${isWinning ? 'animate-win-pulse' : ''} cursor-pointer transition-all duration-300`}
-                  onClick={() => handleHexClick(q)}
+                  onClick={() => {
+                    playSound('click');
+                    handleHexClick(q);
+                  }}
                   style={{ transformOrigin: '52px 60px' }}
                 >
                   <polygon 

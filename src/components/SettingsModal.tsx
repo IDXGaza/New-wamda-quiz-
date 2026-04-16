@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSettings, Theme, AIModel } from '../contexts/SettingsContext';
 import { testAI } from '../services/geminiService';
+import { playSound } from '../utils/sound';
 import { 
   CartoonX, 
   CartoonGear, 
@@ -20,6 +21,7 @@ const SettingsModal: React.FC = () => {
   });
 
   const handleTestAI = async () => {
+    playSound('click');
     setTestStatus({ loading: true, result: null, success: false });
     const res = await testAI(settings.aiModel);
     setTestStatus({ loading: false, result: res.message, success: res.success });
@@ -36,7 +38,10 @@ const SettingsModal: React.FC = () => {
     <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
       <div className="vintage-panel w-full max-w-md p-10 relative max-h-[90vh] overflow-y-auto custom-scrollbar rounded-[3rem] border-4 border-[var(--color-ink-black)] shadow-[8px_8px_0px_var(--color-ink-black)] bg-[var(--color-bg-cream)]">
         <button 
-          onClick={() => setIsSettingsOpen(false)}
+          onClick={() => {
+            playSound('click');
+            setIsSettingsOpen(false);
+          }}
           className="absolute top-6 left-6 w-14 h-14 bg-[var(--color-primary-red)] text-white rounded-2xl flex items-center justify-center hover:scale-110 transition-transform border-4 border-[var(--color-ink-black)] shadow-[4px_4px_0px_var(--color-ink-black)] active:translate-y-1 active:shadow-none"
         >
           <CartoonX size={32} />
@@ -55,7 +60,10 @@ const SettingsModal: React.FC = () => {
               {(['light', 'dark', 'colorful'] as Theme[]).map(t => (
                 <button
                   key={t}
-                  onClick={() => updateSettings({ theme: t })}
+                  onClick={() => {
+                    playSound('click');
+                    updateSettings({ theme: t });
+                  }}
                   className={`py-4 rounded-2xl font-display text-xl border-4 transition-all shadow-[4px_4px_0px_var(--color-ink-black)] active:translate-y-1 active:shadow-none ${
                     settings.theme === t 
                       ? 'bg-[var(--color-primary-gold)] text-[var(--color-ink-black)] border-[var(--color-ink-black)] scale-105' 
@@ -90,7 +98,10 @@ const SettingsModal: React.FC = () => {
               {(['gemini-3-flash-preview', 'gemini-3.1-pro-preview', 'gemini-3.1-flash-lite-preview'] as AIModel[]).map(m => (
                 <button
                   key={m}
-                  onClick={() => updateSettings({ aiModel: m })}
+                  onClick={() => {
+                    playSound('click');
+                    updateSettings({ aiModel: m });
+                  }}
                   className={`py-3 px-5 rounded-xl font-display text-lg border-4 transition-all text-right flex justify-between items-center shadow-[2px_2px_0px_var(--color-ink-black)] active:translate-y-0.5 active:shadow-none ${
                     settings.aiModel === m 
                       ? 'bg-[var(--color-primary-blue)] text-white border-[var(--color-ink-black)]' 
@@ -106,7 +117,10 @@ const SettingsModal: React.FC = () => {
               {(['claude-3-5-sonnet-latest'] as AIModel[]).map(m => (
                 <button
                   key={m}
-                  onClick={() => updateSettings({ aiModel: m })}
+                  onClick={() => {
+                    playSound('click');
+                    updateSettings({ aiModel: m });
+                  }}
                   className={`py-3 px-5 rounded-xl font-display text-lg border-4 transition-all text-right flex justify-between items-center shadow-[2px_2px_0px_var(--color-ink-black)] active:translate-y-0.5 active:shadow-none ${
                     settings.aiModel === m 
                       ? 'bg-[var(--color-primary-blue)] text-white border-[var(--color-ink-black)]' 

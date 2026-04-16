@@ -1,62 +1,76 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
-import Anthropic from "@anthropic-ai/sdk";
-import fs from "fs";
 import path from "path";
+import fs from "fs";
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// API routes
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    env: process.env.NODE_ENV,
+    time: new Date().toISOString()
+  });
+});
 
 async function startServer() {
-  const app = express();
-  const PORT = 3000;
+  console.log("--- Server Startup ---");
+  console.log("NODE_ENV:", process.env.NODE_ENV);
+  console.log("CWD:", process.cwd());
+  
+  const distPath = path.join(process.cwd(), "dist");
 
-  app.use(express.json());
-
-  // API routes
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
-  });
-
-  app.post("/api/generate-questions", async (req, res) => {
-    try {
-      const { promptText, model, apiKeys } = req.body;
-
-      if (!model) {
-        return res.status(400).json({ error: "Model is required" });
-      }
-
-      if (model.startsWith("claude")) {
-        const apiKey = apiKeys?.anthropic || process.env.ANTHROPIC_API_KEY;
-        if (!apiKey) throw new Error("Anthropic API key is not set. Please add it in Settings.");
-        const anthropic = new Anthropic({ apiKey });
-        const response = await anthropic.messages.create({
-          model: model,
-          max_tokens: 4000,
-          messages: [{ role: "user", content: promptText }],
-        });
-        const text = response.content[0].type === "text" ? response.content[0].text : "{}";
-        res.json({ text });
-      } else {
-        res.status(400).json({ error: "Unsupported model" });
-      }
-    } catch (error: any) {
-      const status = error.status || (error.message?.includes('429') ? 429 : 500);
-      res.status(status).json({ error: error.message });
-    }
-  });
-
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    console.log("Mode: Development (Vite)");
+    try {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+      console.log("Vite middleware attached");
+    } catch (err) {
+      console.error("Failed to load Vite:", err);
+    }
   } else {
-    app.use(express.static("dist"));
+    console.log("Mode: Production (Static)");
+    console.log("Dist Path:", distPath);
+    
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      console.log("Static middleware attached");
+    } else {
+      console.error("WARNING: Dist folder not found!");
+    }
+
+    app.get("*all", (req, res) => {
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: "API route not found" });
+      }
+      
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send(`
+          <h1>404 - Not Found</h1>
+          <p>The application build artifacts were not found.</p>
+          <p>Path: ${indexPath}</p>
+        `);
+      }
+    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server is listening on 0.0.0.0:${PORT}`);
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("FATAL: Server failed to start:", err);
+  process.exit(1);
+});
