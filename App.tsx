@@ -8,7 +8,7 @@ import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 
 import { auth, db, storage } from './firebase';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, doc, setDoc, getDocs, deleteDoc, query, where, getDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
@@ -367,8 +367,15 @@ const App: React.FC = () => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (e) {
-      console.error("Login failed", e);
+    } catch (e: any) {
+      console.error("Login popup failed, trying redirect", e);
+      try {
+        const provider = new GoogleAuthProvider();
+        await signInWithRedirect(auth, provider);
+      } catch (redirectError: any) {
+        console.error("Redirect login failed", redirectError);
+        alert("فشل تسجيل الدخول: " + (e.message || "تأكد من تفعيل Google في صفحة Authentication في Firebase أو جرب متصفح آخر."));
+      }
     }
   };
 
