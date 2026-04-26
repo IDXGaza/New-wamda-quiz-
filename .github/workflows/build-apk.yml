@@ -53,7 +53,7 @@ jobs:
             -storepass wamda123 \
             -keypass wamda123 \
             app/build/outputs/apk/release/app-release-unsigned.apk wamda
-          zipalign -v 4 \
+          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/zipalign -v 4 \
             app/build/outputs/apk/release/app-release-unsigned.apk \
             app/build/outputs/apk/release/app-release-signed.apk
         env:
