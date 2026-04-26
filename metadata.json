@@ -1,5 +1,7 @@
 {
-  "name": "ومضة",
-  "description": "تطبيق مسابقات ذكي ومتطور يعتمد على تقنيات الذكاء الاصطناعي من جوجل (Gemini) لإنشاء أسئلة تفاعلية ومبتكرة.",
-  "requestFramePermissions": []
+  "name": "Remix: Copy of ترانيم - Traneem Cloud",
+  "description": "تطبيق موسيقي متطور مع مزامنة سحابية لحفظ مكتبتك الصوتية، العلامات الزمنية، وتخصيص الأغلفة عبر جميع أجهزتك.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

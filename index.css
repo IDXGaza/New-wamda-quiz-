@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --font-cairo: "Cairo", sans-serif;
+}
+
+body {
+  font-family: var(--font-cairo);
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior-y: none;
+  background-color: #f8fafb;
+}
+
+.dark body {
+  background-color: #000000;
+}
+
+.watercolor-bg {
+  background: radial-gradient(circle at 10% 20%, rgba(77, 168, 171, 0.05) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(77, 168, 171, 0.08) 0%, transparent 50%);
+}
+
+.dark .watercolor-bg {
+  background: radial-gradient(circle at 10% 20%, rgba(77, 168, 171, 0.1) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(15, 23, 42, 0.3) 0%, transparent 100%);
+  background-color: #000000;
+}
+
+.scroll-container::-webkit-scrollbar { width: 4px; }
+.scroll-container::-webkit-scrollbar-track { background: transparent; }
+.scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+.dark .scroll-container::-webkit-scrollbar-thumb { background: #334155; }
+
+button, .clickable {
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+html.dark {
+  background-color: #000000;
+  color: #f1f5f9;
+}
+
+html.light {
+  background-color: #f8fafb;
+  color: #334155;
+}
+
+.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+  background-color: rgba(77, 168, 171, 0.1) !important;
+}

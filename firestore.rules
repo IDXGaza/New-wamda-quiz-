@@ -1,176 +1,50 @@
-// ===============================================================
-// Assumed Data Model
-// ===============================================================
-//
-// Collection: users
-// Document ID: {userId}
-// Fields:
-//   - name: string (required, 1-100 chars)
-//   - email: string (required, email format)
-//   - role: string (required, 'user' or 'admin')
-//   - createdAt: string (required, ISO 8601)
-//
-// Collection: rooms
-// Document ID: {roomId}
-// Fields:
-//   - hostId: string (required, UID)
-//   - gameState: string (required, 'waiting', 'playing', 'question', 'revealed')
-//   - buzzedPlayerId: string (optional, UID or null)
-//   - buzzedAt: string (optional, ISO 8601 or null)
-//   - createdAt: string (required, ISO 8601)
-//
-// Collection: rooms/{roomId}/players
-// Document ID: {playerId}
-// Fields:
-//   - name: string (required, 1-50 chars)
-//   - color: string (required, hex or name)
-//   - score: number (required, >= 0)
-//   - joinedAt: string (required, ISO 8601)
-//
-// Collection: questions_vault
-// Document ID: {questionId}
-// Fields:
-//   - id: string (required)
-//   - text: string (required, 1-2000 chars)
-//   - answer: string (required, 1-500 chars)
-//   - category: string
-//   - points: number
-//   - type: string
-//   - difficulty: string
-//   - userId: string (required, UID)
-//   - topic_match: string
-//   - times_played: number
-//   - last_played_at: number
-//   - running_time_sum: number
-//   - correct_count: number
-//   - mastered: bool
-//   - real_difficulty_score: number
-//
-// ===============================================================
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
     
-    function isAuthenticated() {
-      return request.auth != null;
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 256; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isValidTimestamp(ts) {
+      return ts.keys().hasAll(['id', 'time', 'label'])
+             && ts.id is string && ts.id.size() <= 64 && ts.id.matches('^[a-zA-Z0-9_\\-]+$')
+             && (ts.time is number || ts.time is string)
+             && ts.label is string && ts.label.size() <= 200;
     }
-
-    function isAdmin() {
-      return isAuthenticated() &&
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-         (request.auth.token.get('email', '') == "abbas20jat@gmail.com" && request.auth.token.get('email_verified', false) == true));
+    
+    function isValidTrack(data) {
+      return data.keys().hasAll(['userId', 'name', 'artist', 'duration', 'order'])
+             && data.userId == request.auth.uid
+             && data.name is string && data.name.size() <= 500
+             && data.artist is string && data.artist.size() <= 500
+             && (data.duration is number || data.duration is string)
+             && (data.order is number || data.order is string)
+             && (!('audioUrl' in data) || data.audioUrl == null || (data.audioUrl is string && data.audioUrl.size() <= 1000))
+             && (!('coverUrl' in data) || data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 1000))
+             && (!('coverStorageUrl' in data) || data.coverStorageUrl == null || (data.coverStorageUrl is string && data.coverStorageUrl.size() <= 1000))
+             && (!('id' in data) || (data.id is string && data.id.size() <= 128))
+             && (!('isFavorite' in data) || data.isFavorite is bool)
+             && (!('playbackRate' in data) || (data.playbackRate is number || data.playbackRate is string))
+             && (!('timestamps' in data) || (data.timestamps is list && data.timestamps.size() <= 100 && (data.timestamps.size() == 0 || isValidTimestamp(data.timestamps[0]))));
     }
-
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function isValidDateString(dateStr) {
-      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
-    }
-
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
-
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-
-    function isValidUser() {
-      let data = request.resource.data;
-      return data.keys().hasOnly(['name', 'email', 'role', 'createdAt']) &&
-             data.keys().hasAll(['name', 'email', 'role', 'createdAt']) &&
-             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
-             isValidEmail(data.email) &&
-             data.role in ['user', 'admin'] &&
-             isValidDateString(data.createdAt);
-    }
-
-    function isValidRoom() {
-      let data = request.resource.data;
-      return data.keys().hasOnly(['hostId', 'gameState', 'buzzedPlayerId', 'buzzedAt', 'createdAt']) &&
-             data.keys().hasAll(['hostId', 'gameState', 'createdAt']) &&
-             data.hostId is string && data.hostId.size() < 128 &&
-             data.gameState in ['waiting', 'playing', 'question', 'revealed'] &&
-             isValidDateString(data.createdAt) &&
-             (!('buzzedPlayerId' in data) || data.buzzedPlayerId == null || (data.buzzedPlayerId is string && data.buzzedPlayerId.size() < 128)) &&
-             (!('buzzedAt' in data) || data.buzzedAt == null || isValidDateString(data.buzzedAt));
-    }
-
-    function isValidPlayer() {
-      let data = request.resource.data;
-      return data.keys().hasOnly(['name', 'color', 'score', 'joinedAt']) &&
-             data.keys().hasAll(['name', 'color', 'score', 'joinedAt']) &&
-             data.name is string && data.name.size() >= 1 && data.name.size() <= 50 &&
-             data.color is string && data.color.size() <= 30 &&
-             data.score is number &&
-             isValidDateString(data.joinedAt);
-    }
-
-    function isValidVaultQuestion() {
-      let data = request.resource.data;
-      return data.id is string &&
-             data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
-             data.answer is string && data.answer.size() > 0 && data.answer.size() <= 500 &&
-             data.userId == request.auth.uid &&
-             (!('points' in data) || data.points is number) &&
-             (!('times_played' in data) || data.times_played is number) &&
-             (!('last_played_at' in data) || data.last_played_at is number) &&
-             (!('correct_count' in data) || data.correct_count is number) &&
-             (!('mastered' in data) || data.mastered is bool);
-    }
-
-    // ===============================================================
-    // Rules
-    // ===============================================================
-
-    match /users/{userId} {
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser() && request.resource.data.role == 'user';
-      allow update: if isAuthenticated() && (
-        (isOwner(userId) && isValidUser() && request.resource.data.role == resource.data.role) || 
-        isAdmin()
-      );
-      allow delete: if isAdmin();
-    }
-
-    match /rooms/{roomId} {
-      // Anyone authenticated can read the room state to join or watch
-      allow read: if isAuthenticated();
-      
-      // Host can create a room
-      allow create: if isAuthenticated();
-      
-      // Update rules:
-      // 1. Host or Admin can update anything
-      // 2. Players can update buzzed fields
-      allow update: if isAuthenticated();
-      
-      allow delete: if isAuthenticated();
-
-      match /players/{playerId} {
-        allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
-        allow update: if isAuthenticated();
-        allow delete: if isAuthenticated();
-      }
-    }
-
-    match /questions_vault/{questionId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidVaultQuestion();
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidVaultQuestion();
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    match /_connectivity_test_/{testId} {
-      allow read: if true;
+    
+    match /users/{userId}/tracks/{trackId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() 
+                     && request.auth.uid == userId 
+                     && isValidId(userId) 
+                     && isValidId(trackId) 
+                     && isValidTrack(incoming());
+      allow update: if isSignedIn() 
+                     && request.auth.uid == userId
+                     && incoming().userId == existing().userId
+                     && isValidTrack(incoming());
+      allow delete: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }
