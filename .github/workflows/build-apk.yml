@@ -39,15 +39,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
-        
+
       - name: Init Capacitor
-        run: npx cap init "وَمضة" "com.idxgaza.wamda" --web-dir dist
-
-        
-
-      - name: Add Capacitor
         run: |
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          npx cap init "وَمضة" "com.idxgaza.wamda" --web-dir dist
           npx cap add android
 
       - name: Build web app
@@ -69,3 +65,4 @@ jobs:
         with:
           name: wamda-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+```
