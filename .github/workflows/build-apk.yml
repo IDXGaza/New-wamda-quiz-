@@ -39,6 +39,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+        
+      - name: Init Capacitor
+        run: npx cap init "وَمضة" "com.idxgaza.wamda" --web-dir dist
+
+        
 
       - name: Add Capacitor
         run: |
