@@ -13,18 +13,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate Keystore
+      - name: Setup Keystore
         run: |
-          keytool -genkeypair -v \
-            -keystore release.keystore \
-            -alias wamda \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass wamda123 \
-            -keypass wamda123 \
-            -dname "CN=Wamda, OU=IDXGaza, O=IDXGaza, L=Gaza, S=Gaza, C=PS"
-          base64 release.keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -52,11 +43,18 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Build APK
+      - name: Sign APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
+          cd app/build/outputs/apk/release
+          jarsigner -verbose \
+            -keystore ../../../../../release.keystore \
+            -storepass wamda123 \
+            -keypass wamda123 \
+            app-release-unsigned.apk wamda
+          zipalign -v 4 app-release-unsigned.apk app-release-signed.apk
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
 
@@ -64,4 +62,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wamda-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release-signed.apk
