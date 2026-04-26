@@ -48,13 +48,14 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
-          cd app/build/outputs/apk/release
           jarsigner -verbose \
-            -keystore ../../../../../release.keystore \
+            -keystore $GITHUB_WORKSPACE/release.keystore \
             -storepass wamda123 \
             -keypass wamda123 \
-            app-release-unsigned.apk wamda
-          zipalign -v 4 app-release-unsigned.apk app-release-signed.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk wamda
+          zipalign -v 4 \
+            app/build/outputs/apk/release/app-release-unsigned.apk \
+            app/build/outputs/apk/release/app-release-signed.apk
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
 
