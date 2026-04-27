@@ -7,11 +7,6 @@ import TimestampManager from './components/TimestampManager';
 import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 
-import { auth, db, storage } from './firebase';
-import { signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { collection, doc, setDoc, getDocs, deleteDoc, query, where, getDoc } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-
 const UNIFORM_PLACEHOLDER = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&h=600&auto=format&fit=crop";
 
 const DB_NAME = 'TraneemDB';
@@ -102,43 +97,6 @@ const getAllTracksFromDB = async (): Promise<any[]> => {
   }
 };
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
@@ -146,16 +104,6 @@ const App: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState({ 
-    current: 0, 
-    total: 0, 
-    status: "",
-    phase: "idle" as "idle" | "fetching" | "restoring" | "backing_up" | "finished" | "error",
-    cloudCount: undefined as number | undefined
-  });
 
   useEffect(() => {
     const loadLocalInitial = async () => {
@@ -171,222 +119,108 @@ const App: React.FC = () => {
       }
     };
     loadLocalInitial();
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        syncTracksFromFirebase(currentUser.uid); 
-      } else {
-        setSyncProgress({ current: 0, total: 0, status: "", phase: "idle", cloudCount: 0 });
-      }
-    });
-    return () => unsubscribe();
   }, []);
 
-  const syncTracksFromFirebase = async (uid: string) => {
-    if (isSyncing || isBackgroundSyncing) return;
-    
+  const handleExportJSON = async () => {
     try {
-      setIsSyncing(true);
-      setSyncProgress(p => ({ ...p, current: 0, total: 0, status: "جاري جلب قائمة الأناشيد...", phase: "fetching" }));
+      const allTracks = await getAllTracksFromDB();
+      // Converting files to base64 for export if needed, but IndexDB blobs are better handled as JSON refs
+      // For simplicity, we just export the metadata. If user wants full backup, we need to handle blobs.
+      // Let's try to export with base64 if they are small enough, or just metadata.
+      // Actually, a full backup should include the blobs.
       
-      const q = query(collection(db, `users/${uid}/tracks`));
-      let querySnapshot;
-      try {
-        querySnapshot = await getDocs(q);
-      } catch (e) {
-        handleFirestoreError(e, OperationType.LIST, `users/${uid}/tracks`);
-        setSyncProgress(p => ({ ...p, status: "فشل في جلب البيانات من السحابة", phase: "error" }));
-        return; 
-      }
-      
-      const firebaseTracks: Track[] = [];
-      querySnapshot.forEach((doc) => {
-        firebaseTracks.push({ ...doc.data(), id: doc.id } as Track);
-      });
-
-      const initialCloudCount = firebaseTracks.length;
-      const firebaseIds = new Set(firebaseTracks.map(t => t.id));
-      const localTracks = await getAllTracksFromDB();
-      const localIds = new Set(localTracks.map(t => t.id));
-      
-      setSyncProgress(p => ({ ...p, cloudCount: initialCloudCount }));
-
-      // 1. Download missing tracks (Restore)
-      const tracksToDownload = firebaseTracks.filter(t => !localIds.has(t.id));
-      if (tracksToDownload.length > 0) {
-        setSyncProgress(p => ({ ...p, current: 0, total: tracksToDownload.length, status: "جاري استرجاع البيانات من السحابة...", phase: "restoring" }));
-        
-        await Promise.all(tracksToDownload.map(async (track) => {
-          const newTrack = { ...track, url: track.audioUrl || "" };
-          await saveTrackToDB(newTrack);
-          setSyncProgress(prev => ({ ...prev, current: prev.current + 1 }));
-        }));
-
-        const updatedLocal = await getAllTracksFromDB();
-        const updatedTracksWithUrls = updatedLocal.map(t => ({
-          ...t,
-          url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-          coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-        }));
-        setTracks(updatedTracksWithUrls.sort((a, b) => a.order - b.order));
-      }
-
-      // 2. Upload missing tracks (Backup)
-      const tracksToUpload = localTracks.filter(t => !firebaseIds.has(t.id));
-      
-      // Stop blocking full sync UI if restoration is done
-      setIsSyncing(false);
-      
-      if (tracksToUpload.length > 0) {
-        setIsBackgroundSyncing(true);
-        setSyncProgress(p => ({ ...p, current: 0, total: tracksToUpload.length, status: "جاري حفظ نسخة احتياطية في الخلفية...", phase: "backing_up" }));
-        
-        for (let i = 0; i < tracksToUpload.length; i++) {
-          const track = tracksToUpload[i];
-          try {
-            console.log(`Syncing to cloud: ${track.name}`);
-            await uploadTrackToFirebase(track, true);
-          } catch (e) {
-            console.error(`Upload failed for ${track.name}:`, e);
-          }
-          setSyncProgress(prev => ({ 
-            ...prev, 
-            current: i + 1,
-            cloudCount: (prev.cloudCount || 0) + 1
-          }));
+      const tracksToExport = await Promise.all(allTracks.map(async (t) => {
+        const exportObj: any = { ...t };
+        if (t.fileBlob) {
+          exportObj.fileBase64 = await blobToBase64(t.fileBlob);
+          delete exportObj.fileBlob;
         }
-      }
-      
-      setSyncProgress(p => ({ 
-        ...p, 
-        status: "اكتملت المزامنة بنجاح", 
-        phase: "finished"
-      }));
-      
-      setTimeout(() => {
-        setIsBackgroundSyncing(false);
-        setSyncProgress(p => ({ ...p, phase: "idle" }));
-      }, 5000);
-      
-      const finalLocal = await getAllTracksFromDB();
-      const finalTracksWithUrls = finalLocal.map(t => ({
-        ...t,
-        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-      }));
-      
-      setTracks(finalTracksWithUrls.sort((a, b) => a.order - b.order));
-      
-      if (finalTracksWithUrls.length > 0 && currentTrackIndex === null) {
-        setCurrentTrackIndex(0);
-      }
-    } catch (e) {
-      console.error("Sync error:", e);
-      setSyncProgress(p => ({ ...p, status: "حدث خطأ أثناء المزامنة", phase: "error" }));
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const uploadTrackToFirebase = async (track: Track, silent: boolean = false) => {
-    if (!user) return;
-    const path = `users/${user.uid}/tracks/${track.id}`;
-    try {
-      if (!silent) setIsSyncing(true);
-      let audioUrl = track.audioUrl;
-      let coverUrl = track.coverStorageUrl;
-
-      if (track.fileBlob && !audioUrl) {
-        const audioStorageRef = storageRef(storage, `users/${user.uid}/audio/${track.id}`);
-        await uploadBytes(audioStorageRef, track.fileBlob);
-        audioUrl = await getDownloadURL(audioStorageRef);
-      }
-
-      if (track.coverBlob && !coverUrl) {
-        const coverStorageRef = storageRef(storage, `users/${user.uid}/covers/${track.id}`);
-        await uploadBytes(coverStorageRef, track.coverBlob);
-        coverUrl = await getDownloadURL(coverStorageRef);
-      }
-
-      const trackDataToSave = {
-        id: track.id,
-        userId: user.uid,
-        name: track.name || "بدون اسم",
-        artist: track.artist || "مجهول",
-        audioUrl: audioUrl || undefined,
-        coverUrl: track.coverUrl || undefined,
-        coverStorageUrl: coverUrl || undefined,
-        isFavorite: track.isFavorite || false,
-        timestamps: track.timestamps || [],
-        duration: track.duration || 0,
-        playbackRate: track.playbackRate || 1,
-        order: track.order || 0
-      };
-
-      // Strip off undefined properties to avoid Firebase errors
-      Object.keys(trackDataToSave).forEach(key => {
-        if (trackDataToSave[key as keyof typeof trackDataToSave] === undefined) {
-          delete trackDataToSave[key as keyof typeof trackDataToSave];
+        if (t.coverBlob) {
+          exportObj.coverBase64 = await blobToBase64(t.coverBlob);
+          delete exportObj.coverBlob;
         }
-      });
+        return exportObj;
+      }));
 
-      try {
-        await setDoc(doc(db, `users/${user.uid}/tracks`, track.id), trackDataToSave);
-        console.log(`Cloud state updated for ${track.name}`);
-        
-        // Update cloud count immediately if possible
-        setSyncProgress(prev => {
-          if (prev.cloudCount !== undefined) {
-             return { ...prev, cloudCount: prev.cloudCount + 1 };
-          }
-          return prev;
-        });
-      } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, path);
-        setSyncProgress(p => ({ ...p, status: "فشل الرفع للسحابة", phase: "error" }));
-      }
+      const dataStr = JSON.stringify(tracksToExport);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
       
-      // Update local db
-      const updatedTrack = { ...track, audioUrl, coverStorageUrl: coverUrl };
-      await saveTrackToDB(updatedTrack);
-      
-      if (!silent) {
-        setTracks(prev => prev.map(t => t.id === track.id ? updatedTrack : t));
-      }
-      return updatedTrack;
-    } catch (e) {
-      console.error("Upload error:", e);
-      return track;
-    } finally {
-      if (!silent) setIsSyncing(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (e: any) {
-      console.error("Login popup failed, trying redirect", e);
-      try {
-        const provider = new GoogleAuthProvider();
-        await signInWithRedirect(auth, provider);
-      } catch (redirectError: any) {
-        console.error("Redirect login failed", redirectError);
-        alert("فشل تسجيل الدخول: " + (e.message || "تأكد من تفعيل Google في صفحة Authentication في Firebase أو جرب متصفح آخر."));
-      }
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
+      const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.json`;
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportName);
+      linkElement.click();
       setIsDropdownOpen(false);
-      setSyncProgress({ current: 0, total: 0, status: "", phase: "idle", cloudCount: 0 });
     } catch (e) {
-      console.error("Logout failed", e);
+      console.error("Export failed", e);
+      alert("فشل في تصدير النسخة الاحتياطية");
     }
+  };
+
+  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const importedTracks = JSON.parse(event.target?.result as string);
+          if (!Array.isArray(importedTracks)) throw new Error("Format invalid");
+          
+          for (const t of importedTracks) {
+            const trackToSave: any = { ...t };
+            if (t.fileBase64) {
+              trackToSave.fileBlob = base64ToBlob(t.fileBase64);
+              delete trackToSave.fileBase64;
+            }
+            if (t.coverBase64) {
+              trackToSave.coverBlob = base64ToBlob(t.coverBase64);
+              delete trackToSave.coverBase64;
+            }
+            await saveTrackToDB(trackToSave);
+          }
+          
+          const local = await getAllTracksFromDB();
+          const withUrls = local.map(t => ({
+            ...t,
+            url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+            coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+          }));
+          setTracks(withUrls.sort((a, b) => a.order - b.order));
+          alert("تم استيراد النسخة الاحتياطية بنجاح");
+          setIsDropdownOpen(false);
+        } catch (err) {
+          console.error("Import parsing failed", err);
+          alert("فشل في استيراد الملف. تأكد من أنه ملف بصيغة JSON صحيحة.");
+        }
+      };
+      reader.readAsText(file);
+    } catch (err) {
+       console.error("Import failed", err);
+    }
+    e.target.value = '';
+  };
+
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const base64ToBlob = (base64: string): Blob => {
+    const parts = base64.split(';base64,');
+    const contentType = parts[0].split(':')[1];
+    const raw = window.atob(parts[1]);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
   };
   const [playerState, setPlayerState] = useState<PlayerState>({
     isPlaying: false,
@@ -678,7 +512,7 @@ const App: React.FC = () => {
     if (!currentTrack) return;
     const updatedTrack = { ...currentTrack, isFavorite: !currentTrack.isFavorite };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-    saveTrackToDB(updatedTrack).then(() => { if (user) uploadTrackToFirebase(updatedTrack) }).catch(() => {});
+    saveTrackToDB(updatedTrack);
   };
 
   const handleUpdateName = (e: React.MouseEvent) => {
@@ -688,7 +522,7 @@ const App: React.FC = () => {
     if (newName?.trim()) {
       const updatedTrack = { ...currentTrack, name: newName.trim() };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack).then(() => { if (user) uploadTrackToFirebase(updatedTrack) }).catch(() => {});
+      saveTrackToDB(updatedTrack);
     }
   };
 
@@ -699,7 +533,7 @@ const App: React.FC = () => {
     if (newArtist !== null) {
       const updatedTrack = { ...currentTrack, artist: newArtist.trim() };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack).then(() => { if (user) uploadTrackToFirebase(updatedTrack) }).catch(() => {});
+      saveTrackToDB(updatedTrack);
     }
   };
 
@@ -712,7 +546,7 @@ const App: React.FC = () => {
         coverBlob: file
       };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack).then(() => { if (user) uploadTrackToFirebase(updatedTrack) }).catch(() => {});
+      saveTrackToDB(updatedTrack);
     }
   };
 
@@ -725,14 +559,14 @@ const App: React.FC = () => {
     };
     const updatedTrack = { ...currentTrack, timestamps: [...currentTrack.timestamps, newTimestamp] };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-    saveTrackToDB(updatedTrack).then(() => { if (user) uploadTrackToFirebase(updatedTrack) }).catch(() => {});
+    saveTrackToDB(updatedTrack);
   };
 
   const handleRemoveTimestamp = (timestampId: string) => {
     if (!currentTrack) return;
     const updatedTrack = { ...currentTrack, timestamps: currentTrack.timestamps.filter(ts => ts.id !== timestampId) };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-    saveTrackToDB(updatedTrack).then(() => { if (user) uploadTrackToFirebase(updatedTrack) }).catch(() => {});
+    saveTrackToDB(updatedTrack);
   };
 
   const addTrack = async (file: File, durationOverride?: number) => {
@@ -755,9 +589,6 @@ const App: React.FC = () => {
     // Save to local DB
     try {
       await saveTrackToDB(newTrack);
-      if (user) {
-        uploadTrackToFirebase(newTrack);
-      }
     } catch (error) {
       console.error("Failed to save track to local DB:", error);
     }
@@ -766,27 +597,8 @@ const App: React.FC = () => {
   const removeTrack = async (id: string) => {
     try {
       await deleteTrackFromDB(id);
-      if (user) {
-        setIsSyncing(true);
-        try {
-          await deleteDoc(doc(db, `users/${user.uid}/tracks`, id));
-        } catch (e) {
-          handleFirestoreError(e, OperationType.DELETE, `users/${user.uid}/tracks/${id}`);
-        }
-        // We only attempt to delete cover/audio from storage if they were uploaded
-        // Actually, we don't have to strictly delete from Storage here, but it's good practice
-        const trackToDelete = tracks.find(t => t.id === id);
-        if (trackToDelete?.audioUrl && typeof trackToDelete.audioUrl === 'string' && trackToDelete.audioUrl.includes('firebasestorage')) {
-           try {
-              const audioRef = storageRef(storage, `users/${user.uid}/audio/${id}`);
-              await deleteObject(audioRef);
-           } catch(e) {}
-        }
-        setIsSyncing(false);
-      }
     } catch (error) {
       console.error("Failed to delete track:", error);
-      setIsSyncing(false);
     }
 
     setTracks(prev => {
@@ -809,9 +621,6 @@ const App: React.FC = () => {
     try {
       for (const track of updatedTracks) {
         await saveTrackToDB(track);
-        if (user) {
-           uploadTrackToFirebase(track);
-        }
       }
     } catch (error) {
       console.error("Failed to save reordered tracks:", error);
@@ -932,69 +741,17 @@ const App: React.FC = () => {
             <>
               <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
               <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                {user ? (
-                  <>
-                    <div className="px-4 py-3 text-xs font-bold border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                      <div className="flex flex-col w-full">
-                        <span className="text-slate-500 truncate max-w-[140px]" dir="ltr">{user.email}</span>
-                        {syncProgress.cloudCount !== undefined && (
-                          <span className="text-[10px] text-[#4da8ab] font-medium block mt-0.5">سحابة ترانيم: {syncProgress.cloudCount} أنشودة</span>
-                        )}
-                        {(isSyncing || isBackgroundSyncing) && (
-                          <div className="mt-1.5 w-full">
-                            <div className="flex justify-between items-center text-[10px] text-[#4da8ab] mb-1">
-                              <span className={syncProgress.phase === 'error' ? 'text-rose-500' : ''}>
-                                {syncProgress.status || "جاري المزامنة..."}
-                              </span>
-                              {syncProgress.total > 0 && syncProgress.phase !== 'finished' && <span>{syncProgress.current}/{syncProgress.total}</span>}
-                              {syncProgress.phase === 'finished' && <svg className="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                            </div>
-                            <div className="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full transition-all duration-300 ${syncProgress.phase === 'error' ? 'bg-rose-500' : 'bg-[#4da8ab]'}`} 
-                                style={{ width: `${syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : (syncProgress.phase === 'finished' ? 100 : 0)}%` }}
-                              />
-                            </div>
-                            {isBackgroundSyncing && (
-                              <p className="text-[9px] text-slate-400 mt-1 leading-tight">يرجى عدم تسجيل الخروج حتى تكتمل العملية لضمان حفظ بياناتك.</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {(isSyncing || isBackgroundSyncing) && !syncProgress.total && (
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)] shrink-0 ml-2"></span>
-                      )}
-                    </div>
-                    <button onClick={handleLogout} className="w-full text-right px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                       تسجيل الخروج
-                    </button>
-                    <button 
-                      onClick={async () => {
-                        try {
-                          setIsSyncing(false);
-                          setIsBackgroundSyncing(false);
-                          await syncTracksFromFirebase(user.uid);
-                          setIsDropdownOpen(false);
-                        } catch (e) {
-                          console.error("Manual sync failed:", e);
-                        }
-                      }} 
-                      disabled={isSyncing || isBackgroundSyncing}
-                      className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 disabled:opacity-50"
-                    >
-                      <svg className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      {isSyncing ? 'جاري المزامنة...' : 'مزامنة الاناشيد الآن'}
-                    </button>
-                  </>
-                ) : (
-                  <button onClick={handleGoogleLogin} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                    دخول بحساب جوجل للمزامنة
+                <button onClick={handleExportJSON} className="w-full text-right px-4 py-3 text-sm font-bold text-[#4da8ab] hover:bg-[#4da8ab]/5 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  تصدير نسخة احتياطية
+                </button>
+                <div className="relative">
+                  <button className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
+                    استيراد نسخة احتياطية
                   </button>
-                )}
+                  <input type="file" accept=".json" onChange={handleImportJSON} className="absolute inset-0 opacity-0 cursor-pointer" />
+                </div>
                 
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
                 
@@ -1020,7 +777,6 @@ const App: React.FC = () => {
             tracks={tracks} currentId={currentTrack?.id || null} onSelect={handleSelectTrack}
             isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
             isRecording={isRecording} onStartRecording={handleStartRecording}
-            user={user}
           />
         </div>
         

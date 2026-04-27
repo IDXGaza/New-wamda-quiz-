@@ -1,7 +1,6 @@
 
 import React, { useState } from 'react';
 import { Track } from '../types';
-import { User } from 'firebase/auth';
 
 interface SidebarProps {
   onImport: (file: File, durationOverride?: number) => void;
@@ -15,12 +14,11 @@ interface SidebarProps {
   // new recording props
   isRecording?: boolean;
   onStartRecording?: () => void;
-  user?: User | null;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   onImport, onRemove, onMove, tracks, currentId, onSelect, isOpen, onClose,
-  isRecording, onStartRecording, user
+  isRecording, onStartRecording
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
@@ -184,19 +182,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                     <div className="flex-1 min-w-0 text-right overflow-hidden">
                       <div className="flex items-center justify-end gap-1.5 mb-0.5">
-                        {user && (
-                          <div className="shrink-0" title={item.track.audioUrl ? "تمت المزامنة سحابياً" : "بانتظار المزامنة..."}>
-                            {item.track.audioUrl ? (
-                              <svg className="w-3 h-3 text-[#4da8ab]" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M17.5,19c-3.037,0-5.5-2.463-5.5-5.5c0-1.842,0.925-3.468,2.339-4.45C14.156,8.718,14,8.37,14,8c0-1.657,1.343-3,3-3 c0.672,0,1.291,0.222,1.791,0.597C19.537,4.646,20.676,4,22,4c2.209,0,4,1.791,4,4c0,0.371-0.052,0.73-0.148,1.069 C27.185,10.059,28,11.431,28,13c0,2.209-1.791,4-4,4c-0.231,0-0.457-0.02-0.677-0.058C22.183,18.232,19.986,19,17.5,19z" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3 h-3 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-                              </svg>
-                            )}
-                          </div>
-                        )}
                         <p className="font-bold text-xs truncate" dir="rtl" title={item.track.name}>
                           {item.track.name}
                         </p>
