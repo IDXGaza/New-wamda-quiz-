@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Track, Timestamp, PlayerState } from './types';
 import Sidebar from './components/Sidebar';
