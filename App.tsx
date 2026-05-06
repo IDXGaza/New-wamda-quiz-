@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Track, Timestamp, PlayerState } from './types';
 import Sidebar from './components/Sidebar';
@@ -103,6 +104,43 @@ const App: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const touchStartRef = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartRef.current === null) return;
+
+    if (isRecording) {
+      touchStartRef.current = null;
+      return;
+    }
+
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName.toLowerCase() === 'input' || 
+      target.tagName.toLowerCase() === 'button' ||
+      target.closest('button')
+    ) {
+      touchStartRef.current = null;
+      return;
+    }
+
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartRef.current - touchEndX;
+    
+    if (diff > 70) {
+      // Swiped from right to left
+      setIsSidebarOpen(true);
+    } else if (diff < -70) {
+      // Swiped from left to right
+      setIsSidebarOpen(false);
+    }
+    touchStartRef.current = null;
+  };
 
   useEffect(() => {
     const loadLocalInitial = async () => {
@@ -713,7 +751,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`flex flex-col h-screen h-[100dvh] bg-[#f8fafb] dark:bg-black text-slate-700 dark:text-slate-200 overflow-hidden font-cairo ${!isRecording ? 'watercolor-bg' : ''} relative transition-colors duration-300`}>
+    <div 
+      className={`flex flex-col h-screen h-[100dvh] bg-[#f8fafb] dark:bg-black text-slate-700 dark:text-slate-200 overflow-hidden font-cairo ${!isRecording ? 'watercolor-bg' : ''} relative transition-colors duration-300`}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* الهيدر العلوي */}
       <header className="flex items-center justify-between p-4 bg-white/80 dark:bg-black/80 backdrop-blur-lg border-b border-slate-100 dark:border-slate-900 shrink-0 z-[100] relative">
         <div className="flex items-center gap-1 md:gap-3">

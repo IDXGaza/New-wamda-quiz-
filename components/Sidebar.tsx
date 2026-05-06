@@ -23,6 +23,25 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
 
+  const navRef = React.useRef<HTMLElement>(null);
+  const scrollIntervalId = React.useRef<number | null>(null);
+
+  const startAutoScroll = (direction: 'up' | 'down') => {
+    if (scrollIntervalId.current) return;
+    scrollIntervalId.current = window.setInterval(() => {
+      if (navRef.current) {
+        navRef.current.scrollTop += direction === 'down' ? 15 : -15;
+      }
+    }, 20);
+  };
+
+  const stopAutoScroll = () => {
+    if (scrollIntervalId.current) {
+      clearInterval(scrollIntervalId.current);
+      scrollIntervalId.current = null;
+    }
+  };
+
   const filteredTracksWithIndices = tracks
     .map((track, originalIndex) => ({ track, originalIndex }))
     .filter(item => {
@@ -57,6 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const ghost = e.currentTarget.cloneNode(true) as HTMLElement;
     ghost.style.position = "absolute";
     ghost.style.top = "-1000px";
+    // We shouldn't use document.body.appendChild directly like this as it might leak, but it removes it in setTimeout
     document.body.appendChild(ghost);
     e.dataTransfer.setDragImage(ghost, 0, 0);
     setTimeout(() => document.body.removeChild(ghost), 0);
@@ -64,13 +84,32 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!navRef.current) return;
+
+    const { top, bottom } = navRef.current.getBoundingClientRect();
+    const threshold = 60; // pixels from edge to start scrolling
+    const y = e.clientY;
+
+    if (y < top + threshold) {
+       startAutoScroll('up');
+    } else if (y > bottom - threshold) {
+       startAutoScroll('down');
+    } else {
+       stopAutoScroll();
+    }
   };
 
   const onDrop = (e: React.DragEvent, index: number) => {
     e.preventDefault();
+    stopAutoScroll();
     if (draggedItemIndex !== null && draggedItemIndex !== index) {
       onMove(draggedItemIndex, index);
     }
+    setDraggedItemIndex(null);
+  };
+
+  const onDragEnd = () => {
+    stopAutoScroll();
     setDraggedItemIndex(null);
   };
 
@@ -142,7 +181,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-6 pb-40 space-y-4 scroll-container">
+        <nav ref={navRef} className="flex-1 overflow-y-auto px-6 pb-40 space-y-4 scroll-container">
           <div className="flex items-center gap-2 text-slate-300 dark:text-slate-700 px-2">
             <span className="text-[10px] font-black uppercase tracking-[0.3em]">مكتبتك</span>
             <div className="flex-1 h-px bg-slate-50 dark:bg-slate-900" />
@@ -161,7 +200,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                   onDragStart={(e) => onDragStart(e, item.originalIndex)}
                   onDragOver={onDragOver}
                   onDrop={(e) => onDrop(e, item.originalIndex)}
-                  className={`group flex items-center gap-1 transition-all ${draggedItemIndex === item.originalIndex ? 'dragging' : ''}`}
+                  onDragEnd={onDragEnd}
+                  className={`group flex items-center gap-1 transition-all ${draggedItemIndex === item.originalIndex ? 'opacity-50 scale-95' : ''}`}
                 >
                   <div className="text-slate-300 dark:text-slate-800 cursor-grab active:cursor-grabbing p-1">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16"/></svg>
