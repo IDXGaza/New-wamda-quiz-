@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import JSZip from 'jszip';
 import { Track, Timestamp, PlayerState } from './types';
 import Sidebar from './components/Sidebar';
 import Player from './components/Player';
@@ -158,106 +159,100 @@ const App: React.FC = () => {
     loadLocalInitial();
   }, []);
 
-  const handleExportJSON = async () => {
+  const handleExportZip = async () => {
     try {
       const allTracks = await getAllTracksFromDB();
-      // Converting files to base64 for export if needed, but IndexDB blobs are better handled as JSON refs
-      // For simplicity, we just export the metadata. If user wants full backup, we need to handle blobs.
-      // Let's try to export with base64 if they are small enough, or just metadata.
-      // Actually, a full backup should include the blobs.
+      const zip = new JSZip();
       
-      const tracksToExport = await Promise.all(allTracks.map(async (t) => {
-        const exportObj: any = { ...t };
+      const audioFolder = zip.folder("audio");
+      const coversFolder = zip.folder("covers");
+      
+      const metadata = await Promise.all(allTracks.map(async (t) => {
+        const trackMetadata = { ...t };
+        
+        // Handle files
         if (t.fileBlob) {
-          exportObj.fileBase64 = await blobToBase64(t.fileBlob);
-          delete exportObj.fileBlob;
+          audioFolder?.file(`${t.id}.blob`, t.fileBlob);
+          trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
         }
         if (t.coverBlob) {
-          exportObj.coverBase64 = await blobToBase64(t.coverBlob);
-          delete exportObj.coverBlob;
+          coversFolder?.file(`${t.id}.blob`, t.coverBlob);
+          trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
         }
-        return exportObj;
+        
+        // Cleanup transient data
+        delete trackMetadata.fileBlob;
+        delete trackMetadata.coverBlob;
+        delete trackMetadata.url; // url changes
+        delete trackMetadata.coverUrl; // coverUrl changes
+        
+        return trackMetadata;
       }));
-
-      const dataStr = JSON.stringify(tracksToExport);
-      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
       
-      const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.json`;
+      zip.file("metadata.json", JSON.stringify(metadata));
+      const zipBlob = await zip.generateAsync({type: "blob"});
+      
+      const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
       const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportName);
+      linkElement.href = URL.createObjectURL(zipBlob);
+      linkElement.download = exportName;
       linkElement.click();
       setIsDropdownOpen(false);
     } catch (e) {
-      console.error("Export failed", e);
-      alert("فشل في تصدير النسخة الاحتياطية");
+      console.error("Export zip failed", e);
+      alert("فشل تصدير النسخة الاحتياطية");
     }
   };
 
-  const handleImportJSON = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const importedTracks = JSON.parse(event.target?.result as string);
-          if (!Array.isArray(importedTracks)) throw new Error("Format invalid");
-          
-          for (const t of importedTracks) {
-            const trackToSave: any = { ...t };
-            if (t.fileBase64) {
-              trackToSave.fileBlob = base64ToBlob(t.fileBase64);
-              delete trackToSave.fileBase64;
-            }
-            if (t.coverBase64) {
-              trackToSave.coverBlob = base64ToBlob(t.coverBase64);
-              delete trackToSave.coverBase64;
-            }
-            await saveTrackToDB(trackToSave);
+      const zip = await JSZip.loadAsync(file);
+      const metadataFile = zip.file("metadata.json");
+      if (!metadataFile) throw new Error("الملف غير صالح (مفقود metadata.json)");
+      
+      const metadata = JSON.parse(await metadataFile.async("string"));
+      
+      for (const t of metadata) {
+        const trackToSave = { ...t };
+        
+        // Restore blobs
+        if (t.fileBlobPath) {
+          const audioFile = zip.file(t.fileBlobPath);
+          if (audioFile) {
+            trackToSave.fileBlob = await audioFile.async("blob");
           }
-          
-          const local = await getAllTracksFromDB();
-          const withUrls = local.map(t => ({
-            ...t,
-            url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-            coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-          }));
-          setTracks(withUrls.sort((a, b) => a.order - b.order));
-          alert("تم استيراد النسخة الاحتياطية بنجاح");
-          setIsDropdownOpen(false);
-        } catch (err) {
-          console.error("Import parsing failed", err);
-          alert("فشل في استيراد الملف. تأكد من أنه ملف بصيغة JSON صحيحة.");
+          delete trackToSave.fileBlobPath;
         }
-      };
-      reader.readAsText(file);
+        
+        if (t.coverBlobPath) {
+          const coverFile = zip.file(t.coverBlobPath);
+          if (coverFile) {
+            trackToSave.coverBlob = await coverFile.async("blob");
+          }
+          delete trackToSave.coverBlobPath;
+        }
+        
+        await saveTrackToDB(trackToSave);
+      }
+      
+      // Reload UI
+      const local = await getAllTracksFromDB();
+      const withUrls = local.map(t => ({
+        ...t,
+        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+      }));
+      setTracks(withUrls.sort((a, b) => a.order - b.order));
+      alert("تم استيراد النسخة الاحتياطية بنجاح");
+      setIsDropdownOpen(false);
     } catch (err) {
-       console.error("Import failed", err);
+      console.error("Import zip failed", err);
+      alert("فشل استيراد الملف. ربما الملف تالف.");
     }
     e.target.value = '';
-  };
-
-  const blobToBase64 = (blob: Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  };
-
-  const base64ToBlob = (base64: string): Blob => {
-    const parts = base64.split(';base64,');
-    const contentType = parts[0].split(':')[1];
-    const raw = window.atob(parts[1]);
-    const rawLength = raw.length;
-    const uInt8Array = new Uint8Array(rawLength);
-    for (let i = 0; i < rawLength; ++i) {
-      uInt8Array[i] = raw.charCodeAt(i);
-    }
-    return new Blob([uInt8Array], { type: contentType });
   };
   const [playerState, setPlayerState] = useState<PlayerState>({
     isPlaying: false,
@@ -782,16 +777,16 @@ const App: React.FC = () => {
             <>
               <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
               <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                <button onClick={handleExportJSON} className="w-full text-right px-4 py-3 text-sm font-bold text-[#4da8ab] hover:bg-[#4da8ab]/5 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+                <button onClick={handleExportZip} className="w-full text-right px-4 py-3 text-sm font-bold text-[#4da8ab] hover:bg-[#4da8ab]/5 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                  تصدير نسخة احتياطية
+                  تصدير نسخة احتياطية (ZIP)
                 </button>
                 <div className="relative">
                   <button className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
-                    استيراد نسخة احتياطية
+                    استيراد نسخة احتياطية (ZIP)
                   </button>
-                  <input type="file" accept=".json" onChange={handleImportJSON} className="absolute inset-0 opacity-0 cursor-pointer" />
+                  <input type="file" accept=".zip" onChange={handleImportZip} className="absolute inset-0 opacity-0 cursor-pointer" />
                 </div>
                 
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
