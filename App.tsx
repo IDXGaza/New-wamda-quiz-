@@ -268,6 +268,7 @@ const App: React.FC = () => {
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
   const currentTrack = currentTrackIndex !== null ? tracks[currentTrackIndex] : null;
 
   const {
@@ -460,7 +461,12 @@ const App: React.FC = () => {
       }
     };
 
-    const updateTime = () => setPlayerState(prev => ({ ...prev, currentTime: audio.currentTime }));
+    const updateTime = () => {
+      const now = Date.now();
+      if (!audioRef.current || (now - lastUpdateTimeRef.current < 150)) return;
+      lastUpdateTimeRef.current = now;
+      setPlayerState(prev => ({ ...prev, currentTime: audio.currentTime }));
+    };
     const onEnded = () => playerState.isLooping ? (audio.currentTime = 0, audio.play().catch(() => {})) : handleSkipToNext();
     const onWaiting = () => setPlayerState(prev => ({ ...prev, isLoading: true }));
     
