@@ -103,7 +103,10 @@ const App: React.FC = () => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+  const saved = localStorage.getItem('theme');
+  return saved === 'dark';
+});
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const touchStartRef = useRef<number | null>(null);
