@@ -103,17 +103,7 @@ const App: React.FC = () => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-  const saved = localStorage.getItem('theme');
-  return saved === 'dark';
-});
-  useEffect(() => {
-  if (isDarkMode) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-}, [isDarkMode]);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const touchStartRef = useRef<number | null>(null);
@@ -207,24 +197,41 @@ const App: React.FC = () => {
       // Try sharing natively first if on mobile, otherwise download
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       
+      console.log("Starting ZIP export...");
       const file = new File([zipBlob], exportName, { type: "application/zip" });
       
       if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: "النسخة الاحتياطية",
-        });
+        try {
+          console.log("Attempting native share...");
+          await navigator.share({
+            files: [file],
+            title: "النسخة الاحتياطية",
+          });
+          console.log("Share successful");
+        } catch (shareErr) {
+          console.error("Native share failed, falling back to download:", shareErr);
+          triggerDownload(zipBlob, exportName);
+        }
       } else {
-        const linkElement = document.createElement('a');
-        linkElement.href = URL.createObjectURL(zipBlob);
-        linkElement.download = exportName;
-        linkElement.click();
+        console.log("Using download fallback...");
+        triggerDownload(zipBlob, exportName);
       }
       setIsDropdownOpen(false);
     } catch (e) {
       console.error("Export zip failed", e);
-      alert("فشل تصدير النسخة الاحتياطية. تأكد من منح الصلاحيات اللازمة.");
+      alert("فشل تصدير النسخة الاحتياطية: " + (e instanceof Error ? e.message : String(e)));
     }
+  };
+
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const linkElement = document.createElement('a');
+    linkElement.href = url;
+    linkElement.download = filename;
+    document.body.appendChild(linkElement);
+    linkElement.click();
+    document.body.removeChild(linkElement);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const handleImportZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
