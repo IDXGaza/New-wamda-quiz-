@@ -107,6 +107,13 @@ const App: React.FC = () => {
   const saved = localStorage.getItem('theme');
   return saved === 'dark';
 });
+  useEffect(() => {
+  if (isDarkMode) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+}, [isDarkMode]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const touchStartRef = useRef<number | null>(null);
