@@ -193,14 +193,27 @@ const App: React.FC = () => {
       const zipBlob = await zip.generateAsync({type: "blob"});
       
       const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
-      const linkElement = document.createElement('a');
-      linkElement.href = URL.createObjectURL(zipBlob);
-      linkElement.download = exportName;
-      linkElement.click();
+      
+      // Try sharing natively first if on mobile, otherwise download
+      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      
+      const file = new File([zipBlob], exportName, { type: "application/zip" });
+      
+      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "النسخة الاحتياطية",
+        });
+      } else {
+        const linkElement = document.createElement('a');
+        linkElement.href = URL.createObjectURL(zipBlob);
+        linkElement.download = exportName;
+        linkElement.click();
+      }
       setIsDropdownOpen(false);
     } catch (e) {
       console.error("Export zip failed", e);
-      alert("فشل تصدير النسخة الاحتياطية");
+      alert("فشل تصدير النسخة الاحتياطية. تأكد من منح الصلاحيات اللازمة.");
     }
   };
 
