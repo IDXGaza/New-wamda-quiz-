@@ -150,7 +150,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (onClose) onClose(); // close sidebar on mobile if it was open
               }}
               disabled={isRecording}
-              className={`flex-1 w-full bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 overflow-hidden text-sm active:scale-[0.98] ${isRecording ? 'opacity-50 pointer-events-none relative' : ''}`}
+              className={`flex-1 w-full bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 overflow-hidden text-sm active:scale-[0.98] ${isRecording ? 'opacity-50 pointer-events-none relative' : ''}`}
             >
               {isRecording ? (
                  <>
