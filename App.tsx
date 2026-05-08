@@ -267,14 +267,29 @@ const App: React.FC = () => {
   };
 
   const triggerDownload = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const linkElement = document.createElement('a');
-    linkElement.href = url;
-    linkElement.download = filename;
-    document.body.appendChild(linkElement);
-    linkElement.click();
-    document.body.removeChild(linkElement);
-    setTimeout(() => URL.revokeObjectURL(url), 100);
+    console.log("Triggering download, blob size:", blob.size);
+    try {
+      const url = URL.createObjectURL(blob);
+      const linkElement = document.createElement('a');
+      linkElement.href = url;
+      linkElement.download = filename;
+      linkElement.style.display = 'none'; // Ensure it's hidden
+      document.body.appendChild(linkElement);
+      linkElement.click();
+      document.body.removeChild(linkElement);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      alert("بدأ التحميل: " + filename);
+    } catch (e) {
+      console.error("Download failed", e);
+      alert("فشل التحميل: " + (e instanceof Error ? e.message : String(e)));
+      // Fallback: Try window.open if link approach fails in WebView
+      try {
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      } catch (e2) {
+        alert("فشل التحميل تماماً، لا يمكن فتح الملف في المتصفح هذا.");
+      }
+    }
   };
 
 // Removed cloud functions
