@@ -4,7 +4,6 @@ import JSZip from 'jszip';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Track, Timestamp, PlayerState } from './types';
 import Sidebar from './components/Sidebar';
 import Player from './components/Player';
@@ -17,38 +16,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-const storage = getStorage(app);
-
-const syncTrackToCloud = async (track: Track, userId: string) => {
-  const { fileBlob, coverBlob, url, coverUrl, ...trackData } = track as any;
-  
-  let audioUrl = track.audioUrl;
-  if (fileBlob) {
-    const audioRef = ref(storage, `users/${userId}/tracks/${track.id}/audio`);
-    await uploadBytes(audioRef, fileBlob);
-    audioUrl = await getDownloadURL(audioRef);
-  }
-  
-  let newCoverUrl = track.coverUrl;
-  if (coverBlob) {
-    const coverRef = ref(storage, `users/${userId}/tracks/${track.id}/cover`);
-    await uploadBytes(coverRef, coverBlob);
-    newCoverUrl = await getDownloadURL(coverRef);
-  }
-
-  const dataToSave = { 
-    ...trackData, 
-    userId: userId,
-    audioUrl,
-    coverUrl: newCoverUrl,
-    timestamps: trackData.timestamps || []
-  };
-  await setDoc(doc(db, 'users', userId, 'tracks', track.id), dataToSave);
-};
-
-const syncDeleteTrackToCloud = async (id: string, userId: string) => {
-  await deleteDoc(doc(db, 'users', userId, 'tracks', id));
-};
+// Removed cloud functions syncTrackToCloud and syncDeleteTrackToCloud
 
 const UNIFORM_PLACEHOLDER = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&h=600&auto=format&fit=crop";
 
@@ -105,11 +73,7 @@ const saveTrackToDB = async (track: any): Promise<void> => {
       tx.objectStore(STORE_NAME).put(track);
     });
     
-    // Automatic sync
-    const u = auth.currentUser;
-    if (u) {
-      await syncTrackToCloud(track, u.uid);
-    }
+    // Manual sync disabled
   } catch (error) {
     console.error("IndexedDB save error:", error);
     throw error;
@@ -125,12 +89,7 @@ const deleteTrackFromDB = async (id: string): Promise<void> => {
       tx.onerror = () => reject(tx.error);
       tx.objectStore(STORE_NAME).delete(id);
     });
-    
-    // Automatic sync removed intentionally so deleting locally does not delete from cloud
-    // const u = auth.currentUser;
-    // if (u) {
-    //   await syncDeleteTrackToCloud(id, u.uid);
-    // }
+    // Manual sync disabled
   } catch (error) {
     console.error("IndexedDB delete error:", error);
     throw error;
@@ -161,8 +120,6 @@ const App: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [cloudTracks, setCloudTracks] = useState<Track[]>([]);
-  const [isCloudLibraryOpen, setIsCloudLibraryOpen] = useState(false);
 
   const touchStartRef = useRef<number | null>(null);
   
@@ -238,7 +195,12 @@ const App: React.FC = () => {
 
   const handleExportZip = async () => {
     try {
+      console.log("Starting ZIP export...");
+      alert("بدء التصدير...");
       const allTracks = await getAllTracksFromDB();
+      console.log("Tracks fetched:", allTracks.length);
+      alert(`تم جلب ${allTracks.length} نشيد للتصدير`);
+      
       const zip = new JSZip();
       
       const audioFolder = zip.folder("audio");
@@ -268,18 +230,20 @@ const App: React.FC = () => {
       
       zip.file("metadata.json", JSON.stringify(metadata));
       const zipBlob = await zip.generateAsync({type: "blob"});
+      console.log("Zip generated size:", zipBlob.size);
+      alert("تم إنشاء ملف ZIP");
       
       const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
       
       // Try sharing natively first if on mobile, otherwise download
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       
-      console.log("Starting ZIP export...");
       const file = new File([zipBlob], exportName, { type: "application/zip" });
       
       if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           console.log("Attempting native share...");
+           alert("محاولة المشاركة...");
           await navigator.share({
             files: [file],
             title: "النسخة الاحتياطية",
@@ -287,10 +251,12 @@ const App: React.FC = () => {
           console.log("Share successful");
         } catch (shareErr) {
           console.error("Native share failed, falling back to download:", shareErr);
+          alert("فشلت المشاركة، محاولة التحميل...");
           triggerDownload(zipBlob, exportName);
         }
       } else {
         console.log("Using download fallback...");
+        alert("استخدام التحميل المباشر...");
         triggerDownload(zipBlob, exportName);
       }
       setIsDropdownOpen(false);
@@ -311,99 +277,7 @@ const App: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
-  const handleViewCloudLibrary = async () => {
-    if (!user) return handleGoogleLogin();
-    try {
-      alert("جاري جلب قائمة الأناشيد من السحابة...");
-      const tracksRef = collection(db, 'users', user.uid, 'tracks');
-      const querySnapshot = await getDocs(tracksRef);
-      const tracks = querySnapshot.docs.map(d => d.data() as Track);
-      setCloudTracks(tracks);
-      setIsCloudLibraryOpen(true);
-    } catch (e) {
-      console.error(e);
-      alert("فشل جلب قائمة الأناشيد من السحابة.");
-    }
-  };
-
-  const handleDeleteFromCloud = async (id: string, name: string) => {
-    if (!user) return;
-    if (!confirm(`هل أنت متأكد من حذف ${name} من السحابة؟`)) return;
-
-    try {
-      await deleteDoc(doc(db, 'users', user.uid, 'tracks', id));
-      setCloudTracks(prev => prev.filter(t => t.id !== id));
-      alert("تم حذف الأنشودة من السحابة!");
-    } catch (e) {
-      console.error(e);
-      alert("فشل حذف الأنشودة من السحابة.");
-    }
-  };
-
-  const handleBackupToCloud = async () => {
-    if (!user) return handleGoogleLogin();
-    try {
-      alert("جاري رفع البيانات إلى السحابة...");
-      const allTracks = await getAllTracksFromDB();
-      for (const t of allTracks) {
-        // Only keep fields that are part of JSON to be stored in Firestore
-        const { fileBlob, coverBlob, url, coverUrl, ...trackData } = t;
-        
-        // Ensure userId is set
-        const dataToSave = { 
-          ...trackData, 
-          userId: user.uid,
-          // Explicitly include fields that seem to be missing based on the prompt
-          timestamps: trackData.timestamps || [],
-          // Keep other fields intact as they are in trackData
-        };
-        
-        const trackRef = doc(db, 'users', user.uid, 'tracks', t.id);
-        await setDoc(trackRef, dataToSave);
-      }
-      alert("تم رفع البيانات بنجاح!");
-    } catch (e) {
-      console.error("Backup failed", e);
-      alert("فشل رفع البيانات: " + (e instanceof Error ? e.message : String(e)));
-    }
-  };
-
-  const handleRestoreFromCloud = async () => {
-    if (!user) return handleGoogleLogin();
-    try {
-      alert("جاري استعادة البيانات من السحابة...");
-      const tracksRef = collection(db, 'users', user.uid, 'tracks');
-      const querySnapshot = await getDocs(tracksRef);
-      
-      // Before restoring, get existing IDs to avoid re-adding
-      const existingTracks = await getAllTracksFromDB();
-      const existingIds = new Set(existingTracks.map(t => t.id));
-      
-      let count = 0;
-      for (const docSnapshot of querySnapshot.docs) {
-        const trackData = docSnapshot.data() as Track;
-        
-        // Only save if it doesn't already exist locally
-        if (!existingIds.has(trackData.id)) {
-          await saveTrackToDB(trackData);
-          count++;
-        }
-      }
-      
-      const local = await getAllTracksFromDB();
-      const withUrls = local.map(t => ({
-        ...t,
-        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-      }));
-      setTracks(withUrls.sort((a, b) => a.order - b.order));
-      
-      alert(count > 0 ? `تم استعادة ${count} أناشيد بنجاح!` : "جميع الأناشيد موجودة بالفعل.");
-    } catch (e) {
-      console.error("Restore failed", e);
-      alert("فشل استعادة البيانات: " + (e instanceof Error ? e.message : String(e)));
-    }
-  };
+// Removed cloud functions
 
   const handleImportZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -993,18 +867,6 @@ const App: React.FC = () => {
                   استيراد نسخة احتياطية (ZIP)
                   <input type="file" accept=".zip" onChange={handleImportZip} className="hidden" />
                 </label>
-                <button onClick={handleBackupToCloud} className="w-full text-right px-4 py-3 text-sm font-bold text-[#4da8ab] hover:bg-[#4da8ab]/5 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h10a4 4 0 004-4" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-3-3m3 3l3-3" /></svg>
-                  {user ? "مزامنة البيانات مع السحابة" : "تسجيل الدخول للمزامنة"}
-                </button>
-                <button onClick={handleRestoreFromCloud} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
-                  استعادة البيانات من السحابة
-                </button>
-                <button onClick={handleViewCloudLibrary} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                  عرض مكتبة السحابة
-                </button>
                 
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
                 
@@ -1109,35 +971,6 @@ const App: React.FC = () => {
           </div>
         )}
       </footer>
-
-      {isCloudLibraryOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-800 dark:text-slate-100">مكتبة السحابة</h2>
-              <button onClick={() => setIsCloudLibraryOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-                <svg className="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2">
-              {cloudTracks.length === 0 ? (
-                <p className="p-8 text-center text-slate-500">لا توجد أناشيد في السحابة</p>
-              ) : (
-                <ul className="space-y-1">
-                  {cloudTracks.map(t => (
-                    <li key={t.id} className="px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl font-medium text-slate-700 dark:text-slate-200 flex justify-between items-center">
-                      {t.name}
-                      <button onClick={() => handleDeleteFromCloud(t.id, t.name)} className="text-red-500 hover:text-red-700">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
