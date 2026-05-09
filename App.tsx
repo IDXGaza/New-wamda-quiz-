@@ -914,8 +914,7 @@ useEffect(() => {
   </button>
 </div>
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                
-                <button onClick={() => { toggleDarkMode(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+              
                   <span>{isDarkMode ? '☀️' : '🌙'}</span>
                   <span>{isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}</span>
                 </button>
