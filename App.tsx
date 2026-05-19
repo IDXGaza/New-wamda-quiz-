@@ -120,6 +120,26 @@ const App: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [defaultView, setDefaultView] = useState<'all' | 'record' | 'import'>(() => {
+    return (localStorage.getItem('defaultView') as 'all' | 'record' | 'import') || 'all';
+  });
+
+  const handleToggleSourceType = (id: string) => {
+    setTracks(prev => prev.map(t => {
+      if (t.id === id) {
+        const newType = (t.sourceType === 'record' ? 'import' : 'record') as 'record' | 'import';
+        const updated: Track = { ...t, sourceType: newType };
+        saveTrackToDB(updated);
+        return updated;
+      }
+      return t;
+    }));
+  };
+
+  const setDefaultViewSetting = (view: 'all' | 'record' | 'import') => {
+    setDefaultView(view);
+    localStorage.setItem('defaultView', view);
+  };
 
   const touchStartRef = useRef<number | null>(null);
   
@@ -177,20 +197,28 @@ const App: React.FC = () => {
     touchStartRef.current = null;
   };
 
+  const toggleDarkMode = () => {
+    const newMode = !document.documentElement.classList.contains('dark');
+    if (newMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+    setIsDarkMode(newMode);
+  };
+
   useEffect(() => {
-    const loadLocalInitial = async () => {
-      const local = await getAllTracksFromDB();
-      if (local.length > 0) {
-        const withUrls = local.map(t => ({
-          ...t,
-          url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-          coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-        }));
-        setTracks(withUrls.sort((a, b) => a.order - b.order));
-        if (currentTrackIndex === null) setCurrentTrackIndex(0);
-      }
-    };
-    loadLocalInitial();
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+    setIsDarkMode(shouldBeDark);
+    if (shouldBeDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, []);
 
   const handleExportZip = async () => {
@@ -324,6 +352,7 @@ const App: React.FC = () => {
           }
           delete trackToSave.coverBlobPath;
         }
+        trackToSave.sourceType = 'import';
         
         await saveTrackToDB(trackToSave);
       }
@@ -403,28 +432,6 @@ const App: React.FC = () => {
     }
   };
 
-  const toggleDarkMode = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    if (newMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
-useEffect(() => {
-  const savedTheme = localStorage.getItem('theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-  setIsDarkMode(shouldBeDark);
-  if (shouldBeDark) {
-    document.documentElement.classList.add('dark');
-  } else {
-    document.documentElement.classList.remove('dark');
-  }
-}, []);
   useEffect(() => {
     const loadLocalData = async () => {
       try {
@@ -678,10 +685,11 @@ useEffect(() => {
   const handleUpdateCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && currentTrack) {
-      const updatedTrack = { 
+      const updatedTrack: Track = { 
         ...currentTrack, 
         coverUrl: URL.createObjectURL(file), 
-        coverBlob: file
+        coverBlob: file,
+        sourceType: 'import'
       };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
       saveTrackToDB(updatedTrack);
@@ -713,7 +721,7 @@ useEffect(() => {
       id, name: file.name.replace(/\.[^/.]+$/, ""), artist: "",
       url: URL.createObjectURL(file), coverUrl: UNIFORM_PLACEHOLDER,
       isFavorite: false, timestamps: [], duration: durationOverride || 0, playbackRate: 1,
-      order: tracks.length, fileBlob: file,
+      order: tracks.length, fileBlob: file, sourceType: 'record',
     };
     
     // Optimistic UI update
@@ -853,12 +861,12 @@ useEffect(() => {
 
   return (
     <div 
-      className={`flex flex-col h-screen h-[100dvh] bg-[#f8fafb] dark:bg-black text-slate-700 dark:text-slate-200 overflow-hidden font-cairo ${!isRecording ? 'watercolor-bg' : ''} relative transition-colors duration-300`}
+      className={`flex flex-col h-screen h-[100dvh] bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-cairo ${!isRecording ? 'watercolor-bg' : ''} relative transition-colors duration-300`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
       {/* الهيدر العلوي */}
-      <header className="flex items-center justify-between p-4 bg-white/80 dark:bg-black/80 backdrop-blur-lg border-b border-slate-100 dark:border-slate-900 shrink-0 z-[100] relative">
+      <header className="flex items-center justify-between p-4 bg-white/80 dark:bg-slate-950/80 backdrop-blur-lg border-b border-slate-100 dark:border-slate-800 shrink-0 z-[100] relative">
         <div className="flex items-center gap-1 md:gap-3">
           {!isRecording && (
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-[#4da8ab] active:scale-95 transition-transform">
@@ -887,38 +895,39 @@ useEffect(() => {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
                   تصدير نسخة احتياطية (ZIP)
                 </button>
-     <div className="w-full px-4 py-2 flex items-center justify-center">
-  <button
-    onClick={() => { toggleDarkMode(); setIsDropdownOpen(false); }}
-    className={`relative flex items-center justify-center gap-2 px-5 py-2.5 rounded-full transition-all duration-500 ease-in-out active:scale-95 ${
-      isDarkMode
-        ? 'bg-amber-100 text-amber-600 hover:bg-amber-200 shadow-md shadow-amber-200/50'
-        : 'bg-indigo-900 text-indigo-200 hover:bg-indigo-800 shadow-md shadow-indigo-900/50'
-    }`}
-  >
-    <div className="relative w-5 h-5 flex items-center justify-center">
-      <svg
-        className={`w-5 h-5 absolute transition-all duration-500 ${isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50'}`}
-        fill="currentColor" viewBox="0 0 24 24"
-      >
-        <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
-      </svg>
-      <svg
-        className={`w-5 h-5 absolute transition-all duration-500 ${!isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'}`}
-        fill="currentColor" viewBox="0 0 24 24"
-      >
-        <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
-      </svg>
-    </div>
-    <span className="text-sm font-bold">
-      {isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
-    </span>
-  </button>
-</div>
+                <label className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
+                  استيراد نسخة احتياطية (ZIP)
+                  <input type="file" accept=".zip" onChange={handleImportZip} className="hidden" />
+                </label>
+                
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-              
-                  <span>{isDarkMode ? '☀️' : '🌙'}</span>
-                  <span>{isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}</span>
+                
+                <button
+                  onClick={() => { toggleDarkMode(); setIsDropdownOpen(false); }}
+                  className={`relative flex items-center justify-center gap-2 px-5 py-2.5 rounded-full transition-all duration-500 ease-in-out active:scale-95 ${
+                    isDarkMode
+                      ? 'bg-amber-100 text-amber-600 hover:bg-amber-200 shadow-md shadow-amber-200/50'
+                      : 'bg-indigo-900 text-indigo-200 hover:bg-indigo-800 shadow-md shadow-indigo-900/50'
+                  }`}
+                >
+                  <div className="relative w-5 h-5 flex items-center justify-center">
+                    <svg
+                      className={`w-5 h-5 absolute transition-all duration-500 ${isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50'}`}
+                      fill="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
+                    </svg>
+                    <svg
+                      className={`w-5 h-5 absolute transition-all duration-500 ${!isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'}`}
+                      fill="currentColor" viewBox="0 0 24 24"
+                    >
+                      <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <span className="text-sm font-bold">
+                    {isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
+                  </span>
                 </button>
                 
                 <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
@@ -935,6 +944,9 @@ useEffect(() => {
         <div className={`transition-all duration-300 ${isRecording ? 'w-0 opacity-0 overflow-hidden hidden pointer-events-none' : 'w-auto opacity-100'}`}>
           <Sidebar 
             onImport={addTrack} onRemove={removeTrack} onMove={handleMoveTrack}
+            onToggleSourceType={handleToggleSourceType}
+            defaultView={defaultView}
+            setDefaultView={setDefaultViewSetting}
             tracks={tracks} currentId={currentTrack?.id || null} onSelect={handleSelectTrack}
             isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
             isRecording={isRecording} onStartRecording={handleStartRecording}
@@ -942,7 +954,7 @@ useEffect(() => {
         </div>
         
         <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
-          <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-center min-h-[500px]">
+          <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-center min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
                 recordingTime={recordingTime}

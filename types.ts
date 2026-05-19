@@ -22,6 +22,7 @@ export interface Track {
   order: number;
   fileBlob?: File | Blob;
   coverBlob?: File | Blob;
+  sourceType?: 'record' | 'import';
 }
 
 export interface PlayerState {
