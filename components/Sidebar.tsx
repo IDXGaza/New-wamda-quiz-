@@ -216,7 +216,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           
           <div className="space-y-2">
             {tracks.length === 0 ? (
-              <div className="px-6 py-10 text-center bg-white rounded-[24px] border border-dashed border-slate-200">
+              <div className="px-6 py-10 text-center bg-white dark:bg-slate-900 rounded-[24px] border border-dashed border-slate-200 dark:border-slate-800">
                 <p className="text-[10px] text-slate-400 font-bold">لا توجد ملفات</p>
               </div>
             ) : (
@@ -237,7 +237,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <button 
                     onClick={() => { onSelect(item.originalIndex); if (onClose) onClose(); }}
                     disabled={isRecording}
-                    className={`flex-1 flex items-center gap-3 p-3 rounded-[20px] transition-all duration-300 min-w-0 ${currentId === item.track.id ? 'bg-[#4da8ab]/10 text-[#4da8ab] shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400'} ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
+                    className={`flex-1 flex items-center gap-3 p-3 rounded-[20px] transition-all duration-300 min-w-0 ${currentId === item.track.id ? 'bg-[#4da8ab]/10 text-[#4da8ab] shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-900 dark:text-slate-400'} ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
                   >
                     <div className="relative shrink-0">
                       <img src={item.track.coverUrl} className="w-10 h-10 rounded-xl object-cover shadow-sm" alt="" />
@@ -262,7 +262,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <button 
                     onClick={(e) => { e.stopPropagation(); onToggleSourceType(item.track.id); }} 
                     disabled={isRecording}
-                    className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-500/10 hover:bg-slate-100 dark:hover:bg-slate-500/20 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
+                    className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
                     title="نقل بين القوائم"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
@@ -271,7 +271,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <button 
                     onClick={(e) => { e.stopPropagation(); onRemove(item.track.id); }} 
                     disabled={isRecording}
-                    className={`p-2.5 text-slate-500 hover:text-red-500 dark:text-slate-500/70 dark:hover:text-red-400 bg-white dark:bg-slate-500/10 hover:bg-slate-100 dark:hover:bg-slate-500/20 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
+                    className={`p-2.5 text-slate-500 hover:text-red-500 dark:text-slate-500/70 dark:hover:text-red-400 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
                     title="حذف الأنشودة"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

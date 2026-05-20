@@ -11,10 +11,11 @@ import TimestampManager from './components/TimestampManager';
 import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import firebaseConfig from './firebase-applet-config.json';
+import GoogleDriveBackupModal from './components/GoogleDriveBackupModal';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 
 // Removed cloud functions syncTrackToCloud and syncDeleteTrackToCloud
 
@@ -120,6 +121,82 @@ const App: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
+
+  const createBackupZipBlob = async (): Promise<Blob> => {
+    const allTracks = await getAllTracksFromDB();
+    const zip = new JSZip();
+    
+    const audioFolder = zip.folder("audio");
+    const coversFolder = zip.folder("covers");
+    
+    const metadata = await Promise.all(allTracks.map(async (t) => {
+      const trackMetadata = { ...t };
+      
+      // Handle files
+      if (t.fileBlob) {
+        audioFolder?.file(`${t.id}.blob`, t.fileBlob);
+        trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
+      }
+      if (t.coverBlob) {
+        coversFolder?.file(`${t.id}.blob`, t.coverBlob);
+        trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
+      }
+      
+      // Cleanup transient data
+      delete trackMetadata.fileBlob;
+      delete trackMetadata.coverBlob;
+      delete trackMetadata.url; // url changes
+      delete trackMetadata.coverUrl; // coverUrl changes
+      
+      return trackMetadata;
+    }));
+    
+    zip.file("metadata.json", JSON.stringify(metadata));
+    return await zip.generateAsync({type: "blob"});
+  };
+
+  const handleRestoreFromZipBlob = async (blob: Blob) => {
+    const zip = await JSZip.loadAsync(blob);
+    const metadataFile = zip.file("metadata.json");
+    if (!metadataFile) throw new Error("الملف غير صالح (مفقود metadata.json)");
+    
+    const metadata = JSON.parse(await metadataFile.async("string"));
+    
+    for (const t of metadata) {
+      const trackToSave = { ...t };
+      
+      // Restore blobs
+      if (t.fileBlobPath) {
+        const audioFile = zip.file(t.fileBlobPath);
+        if (audioFile) {
+          trackToSave.fileBlob = await audioFile.async("blob");
+        }
+        delete trackToSave.fileBlobPath;
+      }
+      
+      if (t.coverBlobPath) {
+        const coverFile = zip.file(t.coverBlobPath);
+        if (coverFile) {
+          trackToSave.coverBlob = await coverFile.async("blob");
+        }
+        delete trackToSave.coverBlobPath;
+      }
+      trackToSave.sourceType = 'import';
+      
+      await saveTrackToDB(trackToSave);
+    }
+    
+    // Reload UI
+    const local = await getAllTracksFromDB();
+    const withUrls = local.map(t => ({
+      ...t,
+      url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+      coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+    }));
+    setTracks(withUrls.sort((a, b) => a.order - b.order));
+  };
+
   const [defaultView, setDefaultView] = useState<'all' | 'record' | 'import'>(() => {
     return (localStorage.getItem('defaultView') as 'all' | 'record' | 'import') || 'all';
   });
@@ -199,6 +276,7 @@ const App: React.FC = () => {
 
   const toggleDarkMode = () => {
     const newMode = !document.documentElement.classList.contains('dark');
+    document.documentElement.style.transition = 'background-color 0.5s ease, color 0.5s ease';
     if (newMode) {
       document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
@@ -891,15 +969,24 @@ const App: React.FC = () => {
             <>
               <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
               <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                <button onClick={handleExportZip} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+                <button onClick={handleExportZip} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
                   تصدير نسخة احتياطية (ZIP)
                 </button>
-                <label className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
+                <label className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
                   استيراد نسخة احتياطية (ZIP)
                   <input type="file" accept=".zip" onChange={handleImportZip} className="hidden" />
                 </label>
+                <button 
+                  onClick={() => { setIsDriveModalOpen(true); setIsDropdownOpen(false); }} 
+                  className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
+                  النسخ الاحتياطي السحابي (Drive)
+                </button>
                 
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
                 
@@ -930,7 +1017,7 @@ const App: React.FC = () => {
                   </span>
                 </button>
                 
-                <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+                <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
                   مشاركة التطبيق
                 </button>
@@ -1029,6 +1116,13 @@ const App: React.FC = () => {
           </div>
         )}
       </footer>
+
+      <GoogleDriveBackupModal
+        isOpen={isDriveModalOpen}
+        onClose={() => setIsDriveModalOpen(false)}
+        createBackupZip={createBackupZipBlob}
+        restoreBackupZip={handleRestoreFromZipBlob}
+      />
     </div>
   );
 };
