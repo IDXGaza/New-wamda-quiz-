@@ -1,4 +1,9 @@
-import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
+import { 
+  signInWithRedirect, 
+  getRedirectResult,
+  GoogleAuthProvider, 
+  User 
+} from 'firebase/auth';
 import { auth } from '../firebase';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -11,20 +16,25 @@ export interface DriveBackupFile {
 }
 
 /**
- * Trigger Google Sign-In with Google Drive scopes and return the access token
+ * Trigger Google Sign-In with Google Drive scopes using redirect (works in APK)
  */
-export const signInToDrive = async (): Promise<{ user: User; accessToken: string }> => {
+export const signInToDrive = async (): Promise<void> => {
   const provider = new GoogleAuthProvider();
   provider.addScope(DRIVE_SCOPE);
-  
-  // Hint select_account to avoid caching old accounts without token
   provider.setCustomParameters({
     prompt: 'consent select_account'
   });
+  await signInWithRedirect(auth, provider);
+};
 
-  const result = await signInWithPopup(auth, provider);
+/**
+ * After redirect returns, get the user and access token
+ */
+export const getRedirectDriveResult = async (): Promise<{ user: User; accessToken: string } | null> => {
+  const result = await getRedirectResult(auth);
+  if (!result) return null;
+
   const credential = GoogleAuthProvider.credentialFromResult(result);
-  
   if (!credential || !credential.accessToken) {
     throw new Error('لم يتم العثور على رمز الوصول إلى Google Drive. يرجى المحاولة مرة أخرى.');
   }
@@ -54,7 +64,6 @@ export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string): P
   const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
   const boundary = 'traneem_backup_boundary_998877';
   
-  // Construct multipart/related body safely preserving the binary structure
   const multipartBody = new Blob([
     `\r\n--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
     metadataBlob,

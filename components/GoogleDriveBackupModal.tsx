@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { 
-  signInToDrive, 
+  signInToDrive,
+  getRedirectDriveResult,
   uploadBackupToDrive, 
   listBackupsInDrive, 
   downloadBackupFromDrive, 
@@ -29,6 +30,26 @@ export default function GoogleDriveBackupModal({
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeActionId, setActiveActionId] = useState<string | null>(null); // For individual list item loaders
+
+  // On mount: check if returning from Google redirect
+  useEffect(() => {
+    const checkRedirect = async () => {
+      setIsLoading(true);
+      try {
+        const result = await getRedirectDriveResult();
+        if (result) {
+          setUser(result.user);
+          setAccessToken(result.accessToken);
+        }
+      } catch (err: any) {
+        console.error(err);
+        setStatusMessage('فشل الاتصال بـ Google Drive بعد إعادة التوجيه.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    checkRedirect();
+  }, []);
 
   // Handle outside click to close
   useEffect(() => {
@@ -70,17 +91,12 @@ export default function GoogleDriveBackupModal({
   };
 
   const handleConnect = async () => {
-    setIsLoading(true);
-    setStatusMessage(null);
     try {
-      const result = await signInToDrive();
-      setUser(result.user);
-      setAccessToken(result.accessToken);
+      // This will redirect the user to Google — page will reload after
+      await signInToDrive();
     } catch (err: any) {
       console.error(err);
       setStatusMessage('فشل الاتصال بـ Google Drive.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
