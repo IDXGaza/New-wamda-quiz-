@@ -40,59 +40,7 @@ jobs:
         run: npx cap add android
 
       - name: Add storage permission to AndroidManifest
-        run: sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />|' android/app/src/main/AndroidManifest.xml
-
-      - name: Add google-services.json
-        run: |
-          cat > android/app/google-services.json << 'EOF'
-          {
-            "project_info": {
-              "project_number": "911335724064",
-              "project_id": "gen-lang-client-0490932297",
-              "storage_bucket": "gen-lang-client-0490932297.firebasestorage.app"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:911335724064:android:79c6cc8b0fcde66000d845",
-                  "android_client_info": {
-                    "package_name": "com.idxgaza.traneem"
-                  }
-                },
-                "oauth_client": [
-                  {
-                    "client_id": "911335724064-9n20v3rgdsib2ff94g0enaj9uf9j3tu3.apps.googleusercontent.com",
-                    "client_type": 1,
-                    "android_info": {
-                      "package_name": "com.idxgaza.traneem",
-                      "certificate_hash": "823ec2226c7be3e5729693d36cbe4c34f3312047"
-                    }
-                  },
-                  {
-                    "client_id": "911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com",
-                    "client_type": 3
-                  }
-                ],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyA6-Ce7t5t-BXa8bw0YjX_1qlwdWBWXmaA"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": [
-                      {
-                        "client_id": "911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com",
-                        "client_type": 3
-                      }
-                    ]
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          EOF
+        run: sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />|' android/app/src/main/AndroidManifest.xml
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -108,4 +56,3 @@ jobs:
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
-```

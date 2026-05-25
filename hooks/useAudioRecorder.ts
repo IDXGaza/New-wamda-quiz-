@@ -157,7 +157,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
     } catch (err: any) {
       console.log("Microphone access issue:", err.message);
       if (err.name === 'NotAllowedError' || err.message === 'Permission denied') {
-        alert("لم يتم منح صلاحية الميكروفون. الرجاء فتح التطبيق في نافذة جديدة (من خلال زر المشاركة) إذا كنت تستخدمه داخل إطار.");
+        alert("لم يتم منح صلاحية الميكروفون. إذا كنت تستخدم التطبيق كـ APK، تأكد من إضافة إذن RECORD_AUDIO في ملف AndroidManifest.xml. إذا كنت في المتصفح، الرجاء فتح التطبيق في نافذة جديدة أو منح الصلاحية من إعدادات المتصفح.");
       } else {
         alert("تعذر الوصول إلى الميكروفون: " + err.message);
       }
