@@ -1,4 +1,8 @@
-import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  User 
+} from 'firebase/auth';
 import { auth } from '../firebase';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -11,33 +15,21 @@ export interface DriveBackupFile {
 }
 
 /**
- * Trigger Google Sign-In with Google Drive scopes using redirect (works in APK)
+ * Trigger Google Sign-In with Google Drive scopes using popup
  */
-export const signInToDrive = async (): Promise<void> => {
+export const signInToDrive = async (): Promise<{ user: User; accessToken: string }> => {
   const provider = new GoogleAuthProvider();
   provider.addScope(DRIVE_SCOPE);
-  provider.setCustomParameters({
-    prompt: 'consent select_account'
-  });
-  await signInWithRedirect(auth, provider);
-};
-
-/**
- * After redirect returns, get the user and access token
- */
-export const getRedirectDriveResult = async (): Promise<{ user: User; accessToken: string } | null> => {
-  const result = await getRedirectResult(auth);
-  if (!result) return null;
-
+  provider.setCustomParameters({ prompt: 'consent select_account' });
+  
+  const result = await signInWithPopup(auth, provider);
   const credential = GoogleAuthProvider.credentialFromResult(result);
-  if (!credential || !credential.accessToken) {
-    throw new Error('لم يتم العثور على رمز الوصول إلى Google Drive. يرجى المحاولة مرة أخرى.');
+  
+  if (!credential?.accessToken) {
+    throw new Error('لم يتم العثور على رمز الوصول.');
   }
-
-  return {
-    user: result.user,
-    accessToken: credential.accessToken
-  };
+  
+  return { user: result.user, accessToken: credential.accessToken };
 };
 
 /**

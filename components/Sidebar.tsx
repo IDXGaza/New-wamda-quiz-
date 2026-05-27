@@ -188,7 +188,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
           
-          <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+          <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl">
              {[
                {id: 'all', label: 'الكل'}, 
                {id: 'record', label: 'تسجيلات'}, 
@@ -200,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                    setView(v.id as any);
                    setDefaultView(v.id as any);
                  }}
-                 className={`flex-1 text-[10px] font-bold py-2 rounded-lg transition-all ${view === v.id ? 'bg-white shadow-sm text-[#4da8ab]' : 'text-slate-500 hover:text-slate-700'}`}
+                 className={`flex-1 text-[10px] font-bold py-2 rounded-lg transition-all ${view === v.id ? 'bg-white dark:bg-slate-800 shadow-sm text-[#4da8ab]' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
                >
                  {v.label}
                </button>

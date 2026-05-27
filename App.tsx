@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import JSZip from 'jszip';
-import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { GoogleAuthProvider, onAuthStateChanged, User, signInWithPopup } from 'firebase/auth';
 import { collection, addDoc, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { Track, Timestamp, PlayerState } from './types';
@@ -112,7 +112,6 @@ const App: React.FC = () => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -216,9 +215,6 @@ const App: React.FC = () => {
   const touchStartRef = useRef<number | null>(null);
   
   useEffect(() => {
-    // Check for redirect result on load
-    getRedirectResult(auth).catch((error) => console.error("Redirect login error:", error));
-    
     return onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -228,7 +224,7 @@ const App: React.FC = () => {
     setIsLoggingIn(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider);
+      await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
       alert("فشل تسجيل الدخول");
@@ -271,29 +267,8 @@ const App: React.FC = () => {
     touchStartRef.current = null;
   };
 
-  const toggleDarkMode = () => {
-    const newMode = !document.documentElement.classList.contains('dark');
-    document.documentElement.style.transition = 'background-color 0.5s ease, color 0.5s ease';
-    if (newMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-    setIsDarkMode(newMode);
-  };
-
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-    setIsDarkMode(shouldBeDark);
-    if (shouldBeDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.add('dark');
   }, []);
 
   const handleExportZip = async () => {
@@ -966,15 +941,6 @@ const App: React.FC = () => {
             <>
               <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
               <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                <button onClick={handleExportZip} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
-                  تصدير نسخة احتياطية (ZIP)
-                </button>
-                <label className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 cursor-pointer">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" /></svg>
-                  استيراد نسخة احتياطية (ZIP)
-                  <input type="file" accept=".zip" onChange={handleImportZip} className="hidden" />
-                </label>
                 <button 
                   onClick={() => { setIsDriveModalOpen(true); setIsDropdownOpen(false); }} 
                   className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-2"
@@ -986,33 +952,6 @@ const App: React.FC = () => {
                 </button>
                 
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                
-                <button
-                  onClick={() => { toggleDarkMode(); setIsDropdownOpen(false); }}
-                  className={`relative flex items-center justify-center gap-2 px-5 py-2.5 rounded-full transition-all duration-500 ease-in-out active:scale-95 ${
-                    isDarkMode
-                      ? 'bg-amber-100 text-amber-600 hover:bg-amber-200 shadow-md shadow-amber-200/50'
-                      : 'bg-indigo-900 text-indigo-200 hover:bg-indigo-800 shadow-md shadow-indigo-900/50'
-                  }`}
-                >
-                  <div className="relative w-5 h-5 flex items-center justify-center">
-                    <svg
-                      className={`w-5 h-5 absolute transition-all duration-500 ${isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50'}`}
-                      fill="currentColor" viewBox="0 0 24 24"
-                    >
-                      <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
-                    </svg>
-                    <svg
-                      className={`w-5 h-5 absolute transition-all duration-500 ${!isDarkMode ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'}`}
-                      fill="currentColor" viewBox="0 0 24 24"
-                    >
-                      <path fillRule="evenodd" d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <span className="text-sm font-bold">
-                    {isDarkMode ? 'الوضع الفاتح' : 'الوضع الداكن'}
-                  </span>
-                </button>
                 
                 <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
