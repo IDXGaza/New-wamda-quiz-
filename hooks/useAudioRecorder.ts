@@ -1,4 +1,41 @@
 import { useState, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+
+const requestMicPermission = async (): Promise<boolean> => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      // Use dynamic string with /* @vite-ignore */ to prevent Vite from analyzing it statically during build, 
+      // which fails because the community package is a runtime native-only plugin.
+      const moduleName = '@capacitor-community/microphone';
+      // @ts-ignore
+      const { Microphone } = await import(/* @vite-ignore */ moduleName);
+      if (Microphone) {
+        const status = await Microphone.requestPermission();
+        return status.microphone === 'granted';
+      }
+    } catch (e) {
+      console.warn("Capacitor microphone plugin import/request failed, trying global fallback", e);
+    }
+    
+    // Fallback to checking globally registered plugins
+    try {
+      const Microphone = (Capacitor as any).Plugins?.Microphone || (window as any).Capacitor?.Plugins?.Microphone;
+      if (Microphone) {
+        const status = await Microphone.requestPermission();
+        return status.microphone === 'granted';
+      }
+    } catch (e) {
+      console.warn("Capacitor global Microphone plugin request failed", e);
+    }
+  }
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+    return true;
+  } catch (err) {
+    console.error("Web getUserMedia failed:", err);
+    return false;
+  }
+};
 
 export const useAudioRecorder = (onImport: (file: File, durationOverride?: number) => void) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -61,16 +98,10 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       
       // Request microphone runtime permission using Web/Capacitor runtime API
       console.log("Checking and requesting microphone permission at runtime...");
-      try {
-        if (navigator.permissions && navigator.permissions.query) {
-          const status = await navigator.permissions.query({ name: 'microphone' as any });
-          if (status.state === 'denied') {
-            alert("تم رفض صلاحية الميكروفون. الرجاء تفعيلها من إعدادات الهاتف أو المتصفح لتتمكن من التسجيل.");
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn("Could not query permission status, prompting directly:", e);
+      const hasPermission = await requestMicPermission();
+      if (!hasPermission) {
+        alert("لم يتم منح صلاحية الميكروفون. الرجاء تفعيلها من إعدادات الهاتف أو المتصفح لتتمكن من التسجيل.");
+        return;
       }
       
       const stream = await navigator.mediaDevices.getUserMedia({ 

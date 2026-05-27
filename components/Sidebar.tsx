@@ -96,6 +96,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   const handleTouchStart = (e: React.TouchEvent, originalIndex: number) => {
     if (isRecording) return;
     
+    // Explicitly prevent touch reordering if current touch started on any interactive element like buttons, dropdown menu or delete tracks
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('.w-44') || target.closest('[role="button"]') || target.closest('.fixed')) {
+      return;
+    }
+    
     // Save starting position
     touchStartY.current = e.touches[0].clientY;
     touchStartIndex.current = originalIndex;
@@ -406,6 +412,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                           });
                         }
                       }} 
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchMove={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => e.stopPropagation()}
                       disabled={isRecording}
                       className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''} ${openMenuTrackId === item.track.id ? 'text-[#4da8ab] bg-[#4da8ab]/10' : ''}`}
                       title="تصنيف ونقل الأنشودة"
@@ -415,7 +424,13 @@ const Sidebar: React.FC<SidebarProps> = ({
 
                     {openMenuTrackId === item.track.id && menuPosition && (
                       <>
-                        <div className="fixed inset-0 z-[190]" onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); setMenuPosition(null); }} />
+                        <div 
+                          className="fixed inset-0 z-[190]" 
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); setMenuPosition(null); }} 
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onTouchMove={(e) => e.stopPropagation()}
+                          onTouchEnd={(e) => e.stopPropagation()}
+                        />
                         <div 
                           style={{
                             position: 'fixed',
@@ -424,6 +439,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                           }}
                           className="w-44 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-xl py-1.5 z-[200] animate-in fade-in zoom-in-95 duration-100 text-right font-Cairo"
                           onClick={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onTouchMove={(e) => e.stopPropagation()}
+                          onTouchEnd={(e) => e.stopPropagation()}
                         >
                           <div className="px-3 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800/40 mb-1">
                             نقل وتصنيف اللحن إلى:
@@ -435,9 +453,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                               setOpenMenuTrackId(null);
                               setMenuPosition(null);
                             }}
+                            onTouchStart={(e) => e.stopPropagation()}
                             className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType !== 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
                           >
-                            <span className="flex items-center gap-1.5">
+                            <span className="flex items-center gap-1.5 font-Cairo">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
                               <span>أناشيد مستوردة</span>
                             </span>
@@ -452,9 +471,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                               setOpenMenuTrackId(null);
                               setMenuPosition(null);
                             }}
+                            onTouchStart={(e) => e.stopPropagation()}
                             className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType === 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
                           >
-                            <span className="flex items-center gap-1.5">
+                            <span className="flex items-center gap-1.5 font-Cairo">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                               <span>تسجيلات صوتية</span>
                             </span>
@@ -469,6 +489,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                   
                   <button 
                     onClick={(e) => { e.stopPropagation(); onRemove(item.track.id); }} 
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onTouchMove={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => e.stopPropagation()}
                     disabled={isRecording}
                     className={`p-2.5 text-slate-500 hover:text-red-500 dark:text-slate-500/70 dark:hover:text-red-400 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
                     title="حذف الأنشودة"
