@@ -37,9 +37,9 @@ jobs:
         run: npm install -g @capacitor/cli
 
       - name: Add Android platform
-  run: |
-    rm -rf android
-    npx cap add android
+        run: |
+          rm -rf android
+          npx cap add android
 
       - name: Add storage permission to AndroidManifest
         run: sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />|' android/app/src/main/AndroidManifest.xml
