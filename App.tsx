@@ -195,10 +195,10 @@ const App: React.FC = () => {
     return (localStorage.getItem('defaultView') as 'all' | 'record' | 'import') || 'all';
   });
 
-  const handleToggleSourceType = (id: string) => {
+  const handleToggleSourceType = (id: string, explicitType?: 'record' | 'import') => {
     setTracks(prev => prev.map(t => {
       if (t.id === id) {
-        const newType = (t.sourceType === 'record' ? 'import' : 'record') as 'record' | 'import';
+        const newType = explicitType || ((t.sourceType === 'record' ? 'import' : 'record') as 'record' | 'import');
         const updated: Track = { ...t, sourceType: newType };
         saveTrackToDB(updated);
         return updated;

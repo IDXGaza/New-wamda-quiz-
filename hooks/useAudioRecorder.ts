@@ -59,6 +59,20 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       recordingTimeRef.current = 0;
       setAudioData([]);
       
+      // Request microphone runtime permission using Web/Capacitor runtime API
+      console.log("Checking and requesting microphone permission at runtime...");
+      try {
+        if (navigator.permissions && navigator.permissions.query) {
+          const status = await navigator.permissions.query({ name: 'microphone' as any });
+          if (status.state === 'denied') {
+            alert("تم رفض صلاحية الميكروفون. الرجاء تفعيلها من إعدادات الهاتف أو المتصفح لتتمكن من التسجيل.");
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not query permission status, prompting directly:", e);
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           sampleRate: 48000,

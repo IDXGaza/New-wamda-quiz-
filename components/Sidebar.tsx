@@ -6,7 +6,7 @@ interface SidebarProps {
   onImport: (file: File, durationOverride?: number) => void;
   onRemove: (id: string) => void;
   onMove: (fromIndex: number, toIndex: number) => void;
-  onToggleSourceType: (id: string) => void;
+  onToggleSourceType: (id: string, explicitType?: 'record' | 'import') => void;
   defaultView: 'all' | 'record' | 'import';
   setDefaultView: (view: 'all' | 'record' | 'import') => void;
   tracks: Track[];
@@ -26,6 +26,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'all' | 'record' | 'import'>(defaultView);
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
+  const [dragOverCategory, setDragOverCategory] = useState<'all' | 'record' | 'import' | null>(null);
+  const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  // Touch reordering refs & states
+  const touchStartY = React.useRef<number>(0);
+  const touchStartIndex = React.useRef<number | null>(null);
+  const longPressTimeout = React.useRef<number | null>(null);
+  const [activeTouchDragIndex, setActiveTouchDragIndex] = useState<number | null>(null);
+  const isLongPressed = React.useRef<boolean>(false);
 
   const navRef = React.useRef<HTMLElement>(null);
   const scrollIntervalId = React.useRef<number | null>(null);
@@ -81,13 +91,92 @@ const Sidebar: React.FC<SidebarProps> = ({
   const onDragStart = (e: React.DragEvent, index: number) => {
     setDraggedItemIndex(index);
     e.dataTransfer.effectAllowed = 'move';
-    const ghost = e.currentTarget.cloneNode(true) as HTMLElement;
-    ghost.style.position = "absolute";
-    ghost.style.top = "-1000px";
-    // We shouldn't use document.body.appendChild directly like this as it might leak, but it removes it in setTimeout
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, 0, 0);
-    setTimeout(() => document.body.removeChild(ghost), 0);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent, originalIndex: number) => {
+    if (isRecording) return;
+    
+    // Save starting position
+    touchStartY.current = e.touches[0].clientY;
+    touchStartIndex.current = originalIndex;
+    isLongPressed.current = false;
+
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+    }
+
+    longPressTimeout.current = window.setTimeout(() => {
+      isLongPressed.current = true;
+      setDraggedItemIndex(originalIndex);
+      setActiveTouchDragIndex(originalIndex);
+      if (navigator.vibrate) {
+        try {
+          navigator.vibrate(40);
+        } catch (_) {}
+      }
+    }, 400);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isRecording || touchStartIndex.current === null) return;
+
+    const currentY = e.touches[0].clientY;
+    const diffY = Math.abs(currentY - touchStartY.current);
+
+    if (!isLongPressed.current && diffY > 10) {
+      if (longPressTimeout.current) {
+        clearTimeout(longPressTimeout.current);
+        longPressTimeout.current = null;
+      }
+      return;
+    }
+
+    if (isLongPressed.current) {
+      // Prevent browser default scroll
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+
+      const touch = e.touches[0];
+      const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (!targetEl) return;
+
+      let element: HTMLElement | null = targetEl as HTMLElement;
+      let targetIndexStr: string | null = null;
+      while (element && element !== document.body) {
+        targetIndexStr = element.getAttribute('data-index');
+        if (targetIndexStr !== null) break;
+        element = element.parentElement;
+      }
+
+      if (targetIndexStr !== null) {
+        const targetIndex = parseInt(targetIndexStr, 10);
+        const sourceIndex = touchStartIndex.current;
+        if (targetIndex !== sourceIndex && !isNaN(targetIndex)) {
+          onMove(sourceIndex, targetIndex);
+          touchStartIndex.current = targetIndex;
+          setDraggedItemIndex(targetIndex);
+          setActiveTouchDragIndex(targetIndex);
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (longPressTimeout.current) {
+      clearTimeout(longPressTimeout.current);
+      longPressTimeout.current = null;
+    }
+
+    if (isLongPressed.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    touchStartIndex.current = null;
+    isLongPressed.current = false;
+    setDraggedItemIndex(null);
+    setActiveTouchDragIndex(null);
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -200,7 +289,32 @@ const Sidebar: React.FC<SidebarProps> = ({
                    setView(v.id as any);
                    setDefaultView(v.id as any);
                  }}
-                 className={`flex-1 text-[10px] font-bold py-2 rounded-lg transition-all ${view === v.id ? 'bg-white dark:bg-slate-800 shadow-sm text-[#4da8ab]' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                 onDragOver={(e) => {
+                   if (draggedItemIndex !== null && v.id !== 'all') {
+                     e.preventDefault();
+                     setDragOverCategory(v.id as any);
+                   }
+                 }}
+                 onDragLeave={() => {
+                   setDragOverCategory(null);
+                 }}
+                 onDrop={(e) => {
+                   e.preventDefault();
+                   if (draggedItemIndex !== null && v.id !== 'all') {
+                     const item = tracks[draggedItemIndex];
+                     if (item) {
+                       onToggleSourceType(item.id, v.id as any);
+                     }
+                   }
+                   setDragOverCategory(null);
+                 }}
+                 className={`flex-1 text-[10px] font-bold py-2 rounded-lg transition-all ${
+                   dragOverCategory === v.id
+                     ? 'bg-emerald-500 text-white dark:bg-emerald-600 scale-105 shadow-md border border-emerald-400'
+                     : view === v.id 
+                       ? 'bg-white dark:bg-slate-800 shadow-sm text-[#4da8ab]' 
+                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                 }`}
                >
                  {v.label}
                </button>
@@ -224,30 +338,45 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <div 
                   key={item.track.id} 
                   draggable
+                  data-index={item.originalIndex}
                   onDragStart={(e) => onDragStart(e, item.originalIndex)}
                   onDragOver={onDragOver}
                   onDrop={(e) => onDrop(e, item.originalIndex)}
                   onDragEnd={onDragEnd}
-                  className={`group flex items-center gap-1 transition-all ${draggedItemIndex === item.originalIndex ? 'opacity-50 scale-95' : ''}`}
+                  onTouchStart={(e) => handleTouchStart(e, item.originalIndex)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  className={`group flex items-center gap-1 transition-all select-none cursor-grab active:cursor-grabbing rounded-[24px] p-0.5 border ${
+                    draggedItemIndex === item.originalIndex || activeTouchDragIndex === item.originalIndex
+                      ? 'opacity-40 scale-[0.97] bg-[#4da8ab]/10 border-dashed border-[#4da8ab]' 
+                      : 'border-transparent'
+                  }`}
                 >
                   <div className="text-slate-300 dark:text-slate-800 cursor-grab active:cursor-grabbing p-1">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16"/></svg>
                   </div>
 
-                  <button 
-                    onClick={() => { onSelect(item.originalIndex); if (onClose) onClose(); }}
-                    disabled={isRecording}
-                    className={`flex-1 flex items-center gap-3 p-3 rounded-[20px] transition-all duration-300 min-w-0 ${currentId === item.track.id ? 'bg-[#4da8ab]/10 text-[#4da8ab] shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-900 dark:text-slate-400'} ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
+                  <div 
+                    onClick={() => { if (!isRecording) { onSelect(item.originalIndex); if (onClose) onClose(); } }}
+                    className={`flex-1 flex items-center gap-3 p-3 rounded-[20px] transition-all duration-300 min-w-0 cursor-pointer select-none ${currentId === item.track.id ? 'bg-[#4da8ab]/10 text-[#4da8ab] shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-900 dark:text-slate-400'} ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (!isRecording && (e.key === 'Enter' || e.key === ' ')) {
+                        onSelect(item.originalIndex);
+                        if (onClose) onClose();
+                      }
+                    }}
                   >
-                    <div className="relative shrink-0">
-                      <img src={item.track.coverUrl} className="w-10 h-10 rounded-xl object-cover shadow-sm" alt="" />
+                    <div className="relative shrink-0 pointer-events-none select-none">
+                      <img src={item.track.coverUrl} className="w-10 h-10 rounded-xl object-cover shadow-sm pointer-events-none" alt="" draggable="false" />
                       {item.track.isFavorite && (
                         <div className="absolute -top-1.5 -right-1.5 bg-white dark:bg-slate-900 rounded-full p-0.5 shadow-sm border border-slate-100 dark:border-slate-800">
                           <svg className="w-3 h-3 text-rose-500" fill="currentColor" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0 text-right overflow-hidden">
+                    <div className="flex-1 min-w-0 text-right overflow-hidden pointer-events-none select-none">
                       <div className="flex items-center justify-end gap-1.5 mb-0.5">
                         <p className="font-bold text-xs truncate" dir="rtl" title={item.track.name}>
                           {item.track.name}
@@ -257,16 +386,86 @@ const Sidebar: React.FC<SidebarProps> = ({
                         {item.track.artist || "ملف صوتي"}
                       </p>
                     </div>
-                  </button>
+                  </div>
                   
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onToggleSourceType(item.track.id); }} 
-                    disabled={isRecording}
-                    className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
-                    title="نقل بين القوائم"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                  </button>
+                  <div className="relative">
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if (openMenuTrackId === item.track.id) {
+                          setOpenMenuTrackId(null);
+                          setMenuPosition(null);
+                        } else {
+                          setOpenMenuTrackId(item.track.id);
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const spaceBelow = window.innerHeight - rect.bottom;
+                          const preferUp = spaceBelow < 160;
+                          setMenuPosition({
+                            top: preferUp ? rect.top - 120 - 6 : rect.bottom + 6,
+                            left: Math.min(window.innerWidth - 176 - 16, Math.max(16, rect.left))
+                          });
+                        }
+                      }} 
+                      disabled={isRecording}
+                      className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''} ${openMenuTrackId === item.track.id ? 'text-[#4da8ab] bg-[#4da8ab]/10' : ''}`}
+                      title="تصنيف ونقل الأنشودة"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                    </button>
+
+                    {openMenuTrackId === item.track.id && menuPosition && (
+                      <>
+                        <div className="fixed inset-0 z-[190]" onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); setMenuPosition(null); }} />
+                        <div 
+                          style={{
+                            position: 'fixed',
+                            top: `${menuPosition.top}px`,
+                            left: `${menuPosition.left}px`,
+                          }}
+                          className="w-44 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-xl py-1.5 z-[200] animate-in fade-in zoom-in-95 duration-100 text-right font-Cairo"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="px-3 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800/40 mb-1">
+                            نقل وتصنيف اللحن إلى:
+                          </div>
+                          
+                          <button
+                            onClick={() => {
+                              onToggleSourceType(item.track.id, 'import');
+                              setOpenMenuTrackId(null);
+                              setMenuPosition(null);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType !== 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+                              <span>أناشيد مستوردة</span>
+                            </span>
+                            {item.track.sourceType !== 'record' && (
+                              <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              onToggleSourceType(item.track.id, 'record');
+                              setOpenMenuTrackId(null);
+                              setMenuPosition(null);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType === 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                              <span>تسجيلات صوتية</span>
+                            </span>
+                            {item.track.sourceType === 'record' ? (
+                              <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            ) : null}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   
                   <button 
                     onClick={(e) => { e.stopPropagation(); onRemove(item.track.id); }} 
