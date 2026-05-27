@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import JSZip from 'jszip';
-import { GoogleAuthProvider, onAuthStateChanged, User, signInWithPopup } from 'firebase/auth';
+import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, addDoc, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { Track, Timestamp, PlayerState } from './types';
@@ -215,6 +215,9 @@ const App: React.FC = () => {
   const touchStartRef = useRef<number | null>(null);
   
   useEffect(() => {
+    // Check for redirect result on load
+    getRedirectResult(auth).catch((error) => console.error("Redirect login error:", error));
+    
     return onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -224,7 +227,7 @@ const App: React.FC = () => {
     setIsLoggingIn(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithRedirect(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
       alert("فشل تسجيل الدخول");

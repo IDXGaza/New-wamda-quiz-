@@ -1,5 +1,5 @@
 import { 
-  signInWithPopup, 
+  signInWithPopup,
   GoogleAuthProvider, 
   User 
 } from 'firebase/auth';
@@ -15,20 +15,22 @@ export interface DriveBackupFile {
 }
 
 /**
- * Trigger Google Sign-In with Google Drive scopes using popup
+ * Trigger Google Sign-In with Google Drive scopes using popup (works in APK/WebView)
  */
 export const signInToDrive = async (): Promise<{ user: User; accessToken: string }> => {
   const provider = new GoogleAuthProvider();
   provider.addScope(DRIVE_SCOPE);
-  provider.setCustomParameters({ prompt: 'consent select_account' });
-  
+  provider.setCustomParameters({
+    prompt: 'consent select_account'
+  });
+
   const result = await signInWithPopup(auth, provider);
   const credential = GoogleAuthProvider.credentialFromResult(result);
-  
+
   if (!credential?.accessToken) {
-    throw new Error('لم يتم العثور على رمز الوصول.');
+    throw new Error('لم يتم العثور على رمز الوصول إلى Google Drive. يرجى المحاولة مرة أخرى.');
   }
-  
+
   return { user: result.user, accessToken: credential.accessToken };
 };
 

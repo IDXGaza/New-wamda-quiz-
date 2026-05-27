@@ -28,9 +28,8 @@ export default function GoogleDriveBackupModal({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [activeActionId, setActiveActionId] = useState<string | null>(null); // For individual list item loaders
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
 
-  // Handle outside click to close
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -42,7 +41,6 @@ export default function GoogleDriveBackupModal({
     };
   }, [isOpen]);
 
-  // Load backups when accessToken is available
   useEffect(() => {
     if (accessToken) {
       loadBackupList();
@@ -71,6 +69,7 @@ export default function GoogleDriveBackupModal({
 
   const handleConnect = async () => {
     setIsLoading(true);
+    setStatusMessage(null);
     try {
       const result = await signInToDrive();
       setUser(result.user);
@@ -111,7 +110,6 @@ export default function GoogleDriveBackupModal({
   const handleRestoreBackup = async (file: DriveBackupFile) => {
     if (!accessToken) return;
     
-    // Crucial: Workspace safety require explicit user confirmation for data mutation!
     const confirmed = window.confirm(
       `هل أنت متأكد من استعادة النسخة الاحتياطية "${file.name}"؟ ستقوم هذه العملية بدمج وتحديث الأناشيد والتسجيلات الحالية.`
     );
@@ -138,7 +136,6 @@ export default function GoogleDriveBackupModal({
   const handleDeleteBackup = async (file: DriveBackupFile) => {
     if (!accessToken) return;
 
-    // Workspace guidelines require explicit user confirmation for deleting files!
     const confirmed = window.confirm(
       `هل أنت متأكد من حذف النسخة الاحتياطية "${file.name}" من Google Drive نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`
     );
@@ -186,7 +183,6 @@ export default function GoogleDriveBackupModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in font-cairo">
-      {/* Container Card */}
       <div 
         className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[28px] shadow-2xl overflow-hidden flex flex-col text-right animate-in fade-in zoom-in-95 duration-200"
         dir="rtl"
@@ -213,7 +209,6 @@ export default function GoogleDriveBackupModal({
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto max-h-[70vh] space-y-5">
-          {/* Status Alert Banner */}
           {statusMessage && (
             <div className="p-3.5 text-xs text-center font-bold bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center gap-2 border border-indigo-100/10 animate-pulse">
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -224,7 +219,6 @@ export default function GoogleDriveBackupModal({
             </div>
           )}
 
-          {/* Authentication Phase */}
           {!accessToken ? (
             <div className="flex flex-col items-center justify-center py-6 text-center space-y-4">
               <div className="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-teal-500 rounded-3xl flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white transform hover:scale-105 transition-transform duration-300">
@@ -239,7 +233,6 @@ export default function GoogleDriveBackupModal({
                 </p>
               </div>
 
-              {/* GSI style button */}
               <button 
                 onClick={handleConnect}
                 disabled={isLoading}
@@ -255,9 +248,7 @@ export default function GoogleDriveBackupModal({
               </button>
             </div>
           ) : (
-            // Connected Dashboard
             <div className="space-y-5">
-              {/* Linked User Status */}
               <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
                 <div className="flex items-center gap-3">
                   {user?.photoURL ? (
@@ -280,7 +271,6 @@ export default function GoogleDriveBackupModal({
                 </button>
               </div>
 
-              {/* Main Backup Action Button */}
               <button
                 onClick={handleCreateBackup}
                 disabled={isUploading}
@@ -304,7 +294,6 @@ export default function GoogleDriveBackupModal({
                 )}
               </button>
 
-              {/* List of Previous Backups */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between px-1">
                   <h4 className="text-sm font-black text-slate-800 dark:text-slate-200">النسخ الاحتياطية على السحابة</h4>
@@ -355,7 +344,6 @@ export default function GoogleDriveBackupModal({
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {/* Restore Button */}
                             <button
                               onClick={() => handleRestoreBackup(file)}
                               disabled={activeActionId !== null}
@@ -375,7 +363,6 @@ export default function GoogleDriveBackupModal({
                               <span>استعادة</span>
                             </button>
 
-                            {/* Delete Button */}
                             <button
                               onClick={() => handleDeleteBackup(file)}
                               disabled={activeActionId !== null}
@@ -397,7 +384,6 @@ export default function GoogleDriveBackupModal({
           )}
         </div>
 
-        {/* Footer info */}
         <div className="px-6 py-4.5 bg-slate-50 dark:bg-slate-950/10 border-t border-slate-100 dark:border-slate-800/80 text-[10px] text-slate-400 text-center">
           الوصول مشفّر ومحمي تماماً بواسطة خدمات Google Drive الآمنة لحسابك الشخصي.
         </div>
