@@ -398,23 +398,15 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <button 
                       onClick={(e) => { 
                         e.stopPropagation(); 
-                        if (openMenuTrackId === item.track.id) {
-                          setOpenMenuTrackId(null);
-                          setMenuPosition(null);
-                        } else {
-                          setOpenMenuTrackId(item.track.id);
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const spaceBelow = window.innerHeight - rect.bottom;
-                          const preferUp = spaceBelow < 160;
-                          setMenuPosition({
-                            top: preferUp ? rect.top - 120 - 6 : rect.bottom + 6,
-                            left: Math.min(window.innerWidth - 176 - 16, Math.max(16, rect.left))
-                          });
-                        }
+                        setOpenMenuTrackId(openMenuTrackId === item.track.id ? null : item.track.id);
                       }} 
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setOpenMenuTrackId(openMenuTrackId === item.track.id ? null : item.track.id);
+                      }}
                       onTouchStart={(e) => e.stopPropagation()}
                       onTouchMove={(e) => e.stopPropagation()}
-                      onTouchEnd={(e) => e.stopPropagation()}
                       disabled={isRecording}
                       className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''} ${openMenuTrackId === item.track.id ? 'text-[#4da8ab] bg-[#4da8ab]/10' : ''}`}
                       title="تصنيف ونقل الأنشودة"
@@ -422,36 +414,37 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                     </button>
 
-                    {openMenuTrackId === item.track.id && menuPosition && (
+                    {openMenuTrackId === item.track.id && (
                       <>
                         <div 
                           className="fixed inset-0 z-[190]" 
-                          onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); setMenuPosition(null); }} 
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); }} 
+                          onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setOpenMenuTrackId(null); }}
                           onTouchStart={(e) => e.stopPropagation()}
                           onTouchMove={(e) => e.stopPropagation()}
-                          onTouchEnd={(e) => e.stopPropagation()}
                         />
                         <div 
-                          style={{
-                            position: 'fixed',
-                            top: `${menuPosition.top}px`,
-                            left: `${menuPosition.left}px`,
-                          }}
-                          className="w-44 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-xl py-1.5 z-[200] animate-in fade-in zoom-in-95 duration-100 text-right font-Cairo"
+                          className="absolute right-0 mt-1 w-44 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-xl py-1.5 z-[200] animate-in fade-in zoom-in-95 duration-100 text-right font-Cairo"
                           onClick={(e) => e.stopPropagation()}
                           onTouchStart={(e) => e.stopPropagation()}
                           onTouchMove={(e) => e.stopPropagation()}
                           onTouchEnd={(e) => e.stopPropagation()}
                         >
-                          <div className="px-3 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800/40 mb-1">
+                          <div className="px-3 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800/40 mb-1 select-none">
                             نقل وتصنيف اللحن إلى:
                           </div>
                           
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               onToggleSourceType(item.track.id, 'import');
                               setOpenMenuTrackId(null);
-                              setMenuPosition(null);
+                            }}
+                            onTouchEnd={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              onToggleSourceType(item.track.id, 'import');
+                              setOpenMenuTrackId(null);
                             }}
                             onTouchStart={(e) => e.stopPropagation()}
                             className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType !== 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
@@ -466,10 +459,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                           </button>
 
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               onToggleSourceType(item.track.id, 'record');
                               setOpenMenuTrackId(null);
-                              setMenuPosition(null);
+                            }}
+                            onTouchEnd={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              onToggleSourceType(item.track.id, 'record');
+                              setOpenMenuTrackId(null);
                             }}
                             onTouchStart={(e) => e.stopPropagation()}
                             className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType === 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
@@ -478,9 +477,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                               <span>تسجيلات صوتية</span>
                             </span>
-                            {item.track.sourceType === 'record' ? (
+                            {item.track.sourceType === 'record' && (
                               <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                            ) : null}
+                            )}
                           </button>
                         </div>
                       </>
