@@ -1,8 +1,4 @@
-import { 
-  signInWithPopup,
-  GoogleAuthProvider, 
-  User 
-} from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
 import { auth } from '../firebase';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
