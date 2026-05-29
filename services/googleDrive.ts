@@ -9,12 +9,18 @@ export interface DriveBackupFile {
 
 export const signInToDrive = async (): Promise<{ accessToken: string }> => {
   if (Capacitor.isNativePlatform()) {
-    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-    await GoogleAuth.initialize();
-    const user = await GoogleAuth.signIn();
-    const accessToken = user.authentication.accessToken;
-    if (!accessToken) throw new Error('فشل الحصول على رمز الوصول');
-    return { accessToken };
+    try {
+      const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+      await GoogleAuth.initialize();
+      const user = await GoogleAuth.signIn();
+      console.log('GoogleAuth user:', JSON.stringify(user));
+      const accessToken = user?.authentication?.accessToken;
+      if (!accessToken) throw new Error('accessToken فارغ');
+      return { accessToken };
+    } catch (err: any) {
+      console.error('GoogleAuth error:', err?.message, err?.code, JSON.stringify(err));
+      throw new Error(err?.message || 'فشل تسجيل الدخول');
+    }
   }
   throw new Error('هذه الميزة متاحة فقط على التطبيق');
 };
