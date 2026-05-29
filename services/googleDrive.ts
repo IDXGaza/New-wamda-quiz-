@@ -1,7 +1,4 @@
-import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
-import { auth } from '../firebase';
-
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+import { Capacitor } from '@capacitor/core';
 
 export interface DriveBackupFile {
   id: string;
@@ -10,16 +7,16 @@ export interface DriveBackupFile {
   createdTime: string;
 }
 
-export const signInToDrive = async (): Promise<{ user: User; accessToken: string }> => {
-  const provider = new GoogleAuthProvider();
-  provider.addScope(DRIVE_SCOPE);
-  provider.setCustomParameters({ prompt: 'consent select_account' });
-  const result = await signInWithPopup(auth, provider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  if (!credential?.accessToken) {
-    throw new Error('لم يتم العثور على رمز الوصول.');
+export const signInToDrive = async (): Promise<{ accessToken: string }> => {
+  if (Capacitor.isNativePlatform()) {
+    const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+    await GoogleAuth.initialize();
+    const user = await GoogleAuth.signIn();
+    const accessToken = user.authentication.accessToken;
+    if (!accessToken) throw new Error('فشل الحصول على رمز الوصول');
+    return { accessToken };
   }
-  return { user: result.user, accessToken: credential.accessToken };
+  throw new Error('هذه الميزة متاحة فقط على التطبيق');
 };
 
 export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string): Promise<any> => {

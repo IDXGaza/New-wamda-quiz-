@@ -4,5 +4,16 @@
   "webDir": "dist",
   "server": {
     "androidScheme": "https"
+  },
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": [
+        "profile",
+        "email",
+        "https://www.googleapis.com/auth/drive.file"
+      ],
+      "serverClientId": "911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
   }
 }

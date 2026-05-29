@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { User } from 'firebase/auth';
 import { 
   signInToDrive,
   uploadBackupToDrive, 
@@ -23,7 +22,6 @@ export default function GoogleDriveBackupModal({
   restoreBackupZip
 }: GoogleDriveBackupModalProps) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -71,12 +69,12 @@ export default function GoogleDriveBackupModal({
     setIsLoading(true);
     setStatusMessage(null);
     try {
-      const result = await signInToDrive();
-      setUser(result.user);
-      setAccessToken(result.accessToken);
+      const { signInToDrive } = await import('../services/googleDrive');
+      const { accessToken } = await signInToDrive();
+      setAccessToken(accessToken);
     } catch (err: any) {
       console.error(err);
-      setStatusMessage('فشل الاتصال بـ Google Drive.');
+      setStatusMessage('فشل الاتصال بـ Google.');
     } finally {
       setIsLoading(false);
     }
@@ -84,7 +82,6 @@ export default function GoogleDriveBackupModal({
 
   const handleDisconnect = () => {
     setAccessToken(null);
-    setUser(null);
     setBackups([]);
   };
 
@@ -251,16 +248,12 @@ export default function GoogleDriveBackupModal({
             <div className="space-y-5">
               <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
                 <div className="flex items-center gap-3">
-                  {user?.photoURL ? (
-                    <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full border border-emerald-500/20 shadow-inner" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-600 font-bold">
-                      {user?.displayName ? user.displayName[0] : 'G'}
-                    </div>
-                  )}
+                  <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-600 font-bold">
+                    G
+                  </div>
                   <div className="text-right">
-                    <p className="text-sm font-black text-slate-800 dark:text-slate-100">{user?.displayName || 'حساب قوقل'}</p>
-                    <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">{user?.email}</p>
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-100">تم ربط حساب Google</p>
+                    <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">متصل بـ Google Drive</p>
                   </div>
                 </div>
                 <button 
