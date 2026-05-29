@@ -52,15 +52,15 @@ jobs:
 
       - name: Setup fixed keystore
         run: |
-          mkdir -p /root/.android
-          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > /root/.android/debug.keystore
+          mkdir -p $HOME/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > $HOME/.android/debug.keystore
 
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug \
-            -Pandroid.injected.signing.store.file=/root/.android/debug.keystore \
+            -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
             -Pandroid.injected.signing.store.password=android \
             -Pandroid.injected.signing.key.alias=androiddebugkey \
             -Pandroid.injected.signing.key.password=android
