@@ -73,7 +73,6 @@ export default function GoogleDriveBackupModal({
       const { accessToken } = await signInToDrive();
       setAccessToken(accessToken);
     } catch (err: any) {
-      console.error('handleConnect error:', err);
       setStatusMessage(`فشل: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsLoading(false);

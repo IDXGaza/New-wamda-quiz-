@@ -13,13 +13,12 @@ export const signInToDrive = async (): Promise<{ accessToken: string }> => {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
       await GoogleAuth.initialize();
       const user = await GoogleAuth.signIn();
-      console.log('GoogleAuth user:', JSON.stringify(user));
       const accessToken = user?.authentication?.accessToken;
       if (!accessToken) throw new Error('accessToken فارغ');
       return { accessToken };
     } catch (err: any) {
-      console.error('GoogleAuth error:', err?.message, err?.code, JSON.stringify(err));
-      throw new Error(err?.message || 'فشل تسجيل الدخول');
+      const msg = err?.message || err?.code || JSON.stringify(err) || 'خطأ غير معروف';
+      throw new Error(msg);
     }
   }
   throw new Error('هذه الميزة متاحة فقط على التطبيق');
