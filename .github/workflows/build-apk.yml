@@ -47,6 +47,9 @@ jobs:
           rm -rf android
           npx cap add android
 
+      - name: Copy google-services.json
+        run: cp google-services.json android/app/google-services.json
+
       - name: Add storage permission to AndroidManifest
         run: sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />|' android/app/src/main/AndroidManifest.xml
 
