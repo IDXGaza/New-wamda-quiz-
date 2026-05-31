@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Track } from '../types';
 
@@ -12,6 +11,7 @@ interface SidebarProps {
   tracks: Track[];
   currentId: string | null;
   onSelect: (index: number) => void;
+  onPlayRandom: () => void;
   isOpen?: boolean;
   onClose?: () => void;
   // new recording props
@@ -20,7 +20,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
-  onImport, onRemove, onMove, onToggleSourceType, defaultView, setDefaultView, tracks, currentId, onSelect, isOpen, onClose,
+  onImport, onRemove, onMove, onToggleSourceType, defaultView, setDefaultView, tracks, currentId, onSelect, onPlayRandom, isOpen, onClose,
   isRecording, onStartRecording
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -230,7 +230,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
             </div>
           </div>
-
+          
           <div className="flex gap-2 w-full relative">
             <div className="block flex-1 relative">
               <div className={`relative w-full bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 overflow-hidden text-sm ${isRecording ? 'opacity-50 pointer-events-none' : 'cursor-pointer active:scale-[0.98]'}`}>
@@ -269,6 +269,15 @@ const Sidebar: React.FC<SidebarProps> = ({
               )}
             </button>
           </div>
+
+          <button 
+            onClick={() => { onPlayRandom(); if (onClose) onClose(); }}
+            disabled={isRecording || tracks.length === 0}
+            className={`w-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold py-3 px-2 rounded-[20px] transition-all shadow-sm flex items-center justify-center gap-2 overflow-hidden text-sm active:scale-[0.98] ${isRecording || tracks.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>تجربة عشوائية</span>
+          </button>
 
           <div className="relative group">
             <input 

@@ -509,6 +509,13 @@ const App: React.FC = () => {
     setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
   };
 
+  const handlePlayRandomTrack = () => {
+    if (tracks.length > 0) {
+      const randomIndex = Math.floor(Math.random() * tracks.length);
+      handleSelectTrack(randomIndex);
+    }
+  };
+
   const handleSkipToNext = () => {
     if (currentTrackIndex !== null && tracks.length > 0) {
       const nextIndex = (currentTrackIndex + 1) % tracks.length;
@@ -974,6 +981,7 @@ const App: React.FC = () => {
             defaultView={defaultView}
             setDefaultView={setDefaultViewSetting}
             tracks={tracks} currentId={currentTrack?.id || null} onSelect={handleSelectTrack}
+            onPlayRandom={handlePlayRandomTrack}
             isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
             isRecording={isRecording} onStartRecording={handleStartRecording}
           />
