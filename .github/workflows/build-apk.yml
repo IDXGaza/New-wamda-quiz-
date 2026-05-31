@@ -25,12 +25,6 @@ jobs:
         run: npm run build
 
       - name: Setup Java
-        uses: android-actions/setup-android@v3 # Note: wait, original had separate java, let's copy user's snippet exactly as requested!
-        # Ah, the user specified setup Java then Setup Android SDK. Let's write the exact code the user provided!
-        # "احذف كل الكود في ملف build apk.yml و استبدله هذا" (Delete all code in build apk.yml and replace it with this)
-        # Let's write exactly what the user wrote.
-
-      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -56,7 +50,7 @@ jobs:
           package com.idxgaza.traneem
 
           import android.os.Bundle
-          import com.codetrixstudio.capacitor.GoogleAuth.GoogleAuth
+          import codetrixstudio.capacitor.googleauth.GoogleAuth
           import com.getcapacitor.BridgeActivity
 
           class MainActivity : BridgeActivity() {
@@ -67,18 +61,26 @@ jobs:
           }
           EOF
 
-
       - name: Add storage permission to AndroidManifest
         run: sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />|' android/app/src/main/AndroidManifest.xml
 
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Setup fixed keystore
+        run: |
+          mkdir -p $HOME/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > $HOME/.android/debug.keystore
+
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug \
+            -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
