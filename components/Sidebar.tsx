@@ -487,10 +487,20 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                   
                   <button 
-                    onClick={(e) => { e.stopPropagation(); onRemove(item.track.id); }} 
+                    onClick={(e) => { 
+                      e.stopPropagation();
+                      if (window.confirm('هل أنت متأكد من حذف هذه الأنشودة؟')) {
+                        onRemove(item.track.id);
+                      }
+                    }} 
                     onTouchStart={(e) => e.stopPropagation()}
                     onTouchMove={(e) => e.stopPropagation()}
-                    onTouchEnd={(e) => e.stopPropagation()}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm('هل أنت متأكد من حذف هذه الأنشودة؟')) {
+                        onRemove(item.track.id);
+                      }
+                    }}
                     disabled={isRecording}
                     className={`p-2.5 text-slate-500 hover:text-red-500 dark:text-slate-500/70 dark:hover:text-red-400 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''}`}
                     title="حذف الأنشودة"
