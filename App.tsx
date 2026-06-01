@@ -999,7 +999,7 @@ const App: React.FC = () => {
         </div>
         
         <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
-          <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-center min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
+          <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
                 getAnalyser={getAnalyser}
