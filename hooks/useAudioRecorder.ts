@@ -1,6 +1,16 @@
 import { useState, useRef, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 
+const base64ToBlob = (base64: string, mimeType: string): Blob => {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+};
+
 const requestMicPermission = async (): Promise<boolean> => {
   if (Capacitor.isNativePlatform()) {
     try {
@@ -71,12 +81,36 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
         return;
       }
 
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { VoiceRecorder } = await import('capacitor-voice-recorder');
+          const canRecord = await VoiceRecorder.canDeviceVoiceRecord();
+          if (!canRecord.value) {
+            alert("الجهاز الحالي لا يدعم عملية تسجيل الصوت.");
+            return;
+          }
+          await VoiceRecorder.startRecording();
+          setIsRecording(true);
+          setIsPaused(false);
+          timerRef.current = setInterval(() => {
+            setRecordingTime(prev => {
+              const newTime = prev + 1;
+              recordingTimeRef.current = newTime;
+              return newTime;
+            });
+          }, 1000);
+          return;
+        } catch (nativeErr: any) {
+          console.error("Native recording activation failed, fallback to Web API", nativeErr);
+        }
+      }
+
       console.log("Requesting microphone stream...");
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: true
       });
 
-      // Setup audio analyzer for visualizer
+      // Setup audio analyzer for visualizer (Web only)
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       const source = audioContextRef.current.createMediaStreamSource(stream);
       analyserRef.current = audioContextRef.current.createAnalyser();
@@ -169,14 +203,74 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = useCallback(async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { VoiceRecorder } = await import('capacitor-voice-recorder');
+        const result = await VoiceRecorder.stopRecording();
+        cleanup();
+        
+        const base64 = result.value.recordDataBase64;
+        const mimeType = result.value.mimeType || 'audio/wav';
+        const msDuration = result.value.msDuration || (recordingTimeRef.current * 1000);
+        
+        // Convert base64 to Blob
+        const recordedBlob = base64ToBlob(base64, mimeType);
+        const date = new Date();
+        const dateStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        
+        let ext = 'aac';
+        const mime = mimeType.toLowerCase();
+        if (mime.includes('wav')) ext = 'wav';
+        else if (mime.includes('webm')) ext = 'webm';
+        else if (mime.includes('mp4') || mime.includes('m4a')) ext = 'm4a';
+        else if (mime.includes('3gpp')) ext = '3gp';
+        else if (mime.includes('ogg')) ext = 'ogg';
+
+        const file = new File([recordedBlob], `تسجيل صوتي - ${dateStr}.${ext}`, { type: mimeType });
+        onImport(file, msDuration / 1000);
+        
+        setIsRecording(false);
+        setIsPaused(false);
+        setRecordingTime(0);
+        recordingTimeRef.current = 0;
+        return;
+      } catch (err: any) {
+        console.error("Native voice stop failed:", err);
+      }
+    }
+
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       cleanup();
     }
-  };
+  }, [isRecording, cleanup, onImport]);
 
-  const togglePause = () => {
+  const togglePause = useCallback(async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { VoiceRecorder } = await import('capacitor-voice-recorder');
+        if (isPaused) {
+          await VoiceRecorder.resumeRecording();
+          setIsPaused(false);
+          timerRef.current = setInterval(() => {
+            setRecordingTime(prev => {
+              const newTime = prev + 1;
+              recordingTimeRef.current = newTime;
+              return newTime;
+            });
+          }, 1000);
+        } else {
+          await VoiceRecorder.pauseRecording();
+          setIsPaused(true);
+          if (timerRef.current) clearInterval(timerRef.current);
+        }
+        return;
+      } catch (err) {
+        console.error("Native voice pause/resume failed:", err);
+      }
+    }
+
     if (mediaRecorderRef.current && isRecording) {
       if (isPaused) {
         mediaRecorderRef.current.resume();
@@ -194,9 +288,24 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
         if (timerRef.current) clearInterval(timerRef.current);
       }
     }
-  };
+  }, [isRecording, isPaused]);
 
-  const cancelRecording = () => {
+  const cancelRecording = useCallback(async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { VoiceRecorder } = await import('capacitor-voice-recorder');
+        await VoiceRecorder.stopRecording(); // consume the recording and discard
+        cleanup();
+        setIsRecording(false);
+        setIsPaused(false);
+        setRecordingTime(0);
+        recordingTimeRef.current = 0;
+        return;
+      } catch (err) {
+        console.error("Native voice cancel failed:", err);
+      }
+    }
+
     if (mediaRecorderRef.current && isRecording) {
       // Overwrite onstop so it doesn't save
       mediaRecorderRef.current.onstop = () => {
@@ -210,7 +319,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       };
       mediaRecorderRef.current.stop();
     }
-  };
+  }, [isRecording, cleanup]);
 
   return {
     isRecording,

@@ -30,6 +30,7 @@ export default function GoogleDriveBackupModal({
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isProcessingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -89,7 +90,11 @@ export default function GoogleDriveBackupModal({
 
   const handleCreateBackup = async () => {
     if (!accessToken) return;
-    if (isUploading || isLoading) return;
+    if (isUploading || isLoading || activeActionId || isProcessingRef.current) {
+      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+      return;
+    }
+    isProcessingRef.current = true;
     setIsUploading(true);
     setStatusMessage('جاري إعداد النسخة الاحتياطية...');
     try {
@@ -103,18 +108,24 @@ export default function GoogleDriveBackupModal({
       setStatusMessage('فشل رفع النسخة الاحتياطية للسحابة.');
     } finally {
       setIsUploading(false);
+      isProcessingRef.current = false;
       setTimeout(() => setStatusMessage(null), 4000);
     }
   };
 
   const handleRestoreBackup = async (file: DriveBackupFile) => {
     if (!accessToken) return;
+    if (isUploading || isLoading || activeActionId || isProcessingRef.current) {
+      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+      return;
+    }
     
     const confirmed = window.confirm(
       `هل أنت متأكد من استعادة النسخة الاحتياطية "${file.name}"؟ ستقوم هذه العملية بدمج وتحديث الأناشيد الحالية.`
     );
     if (!confirmed) return;
 
+    isProcessingRef.current = true;
     setActiveActionId(file.id);
     setStatusMessage('جاري تحميل ملف الاستعادة من Google Drive...');
     try {
@@ -129,18 +140,24 @@ export default function GoogleDriveBackupModal({
       alert('فشل في استعادة النسخة الاحتياطية.');
     } finally {
       setActiveActionId(null);
+      isProcessingRef.current = false;
       setTimeout(() => setStatusMessage(null), 4000);
     }
   };
 
   const handleDeleteBackup = async (file: DriveBackupFile) => {
     if (!accessToken) return;
+    if (isUploading || isLoading || activeActionId || isProcessingRef.current) {
+      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+      return;
+    }
 
     const confirmed = window.confirm(
       `هل أنت متأكد من حذف النسخة "${file.name}" من Google Drive نهائياً؟`
     );
     if (!confirmed) return;
 
+    isProcessingRef.current = true;
     setActiveActionId(file.id);
     setStatusMessage('جاري حذف الملف من Google Drive...');
     try {
@@ -152,13 +169,18 @@ export default function GoogleDriveBackupModal({
       setStatusMessage('فشل حذف الملف.');
     } finally {
       setActiveActionId(null);
+      isProcessingRef.current = false;
       setTimeout(() => setStatusMessage(null), 4000);
     }
   };
 
   // Local Import / Export Functions
   const handleLocalExport = async (method: 'save' | 'share' = 'share') => {
-    if (isLoading || isUploading) return;
+    if (isLoading || isUploading || activeActionId || isProcessingRef.current) {
+      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+      return;
+    }
+    isProcessingRef.current = true;
     setIsLoading(true);
     setStatusMessage('جاري تجهيز النسخة الاحتياطية (ZIP)...');
     try {
@@ -167,7 +189,7 @@ export default function GoogleDriveBackupModal({
       const now = new Date();
       const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
       const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-      const exportName = `traneem_backup_${datePart}_${timePart}.zip`;
+      const exportName = `نسخة_احتياطية_ترانيم_${datePart}_${timePart}.zip`;
 
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
@@ -269,6 +291,7 @@ export default function GoogleDriveBackupModal({
       setStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsLoading(false);
+      isProcessingRef.current = false;
       setTimeout(() => setStatusMessage(null), 4000);
     }
   };
@@ -277,6 +300,12 @@ export default function GoogleDriveBackupModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (isLoading || isUploading || activeActionId || isProcessingRef.current) {
+      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+      return;
+    }
+
+    isProcessingRef.current = true;
     setIsLoading(true);
     setStatusMessage('جاري فك واستيراد النسخة الاحتياطية...');
     try {
@@ -289,6 +318,7 @@ export default function GoogleDriveBackupModal({
       alert('فشل استيراد النسخة! يرجى اختيار ملف ZIP صالح تم تصديره مسبقاً من تطبيق ترانيم.');
     } finally {
       setIsLoading(false);
+      isProcessingRef.current = false;
       e.target.value = '';
       setTimeout(() => setStatusMessage(null), 4000);
     }
