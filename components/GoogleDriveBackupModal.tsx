@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { 
   getAccessToken,
   uploadBackupToDrive, 
@@ -161,31 +162,71 @@ export default function GoogleDriveBackupModal({
     try {
       const zipBlob = await createBackupZip();
       const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
-      const file = new File([zipBlob], exportName, { type: "application/zip" });
-      
-      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      
-      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: "نسخة ترانيم الاحتياطية",
+
+      if (Capacitor.isNativePlatform()) {
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+
+        // Helper to convert blob to base64
+        const blobToBase64 = (blob: Blob): Promise<string> => {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = reject;
+            reader.onload = () => {
+              const result = reader.result as string;
+              const base64 = result.split(',')[1] || result;
+              resolve(base64);
+            };
+            reader.readAsDataURL(blob);
+          });
+        };
+
+        setStatusMessage('جاري تشفير وحفظ الملف على الهاتف...');
+        const base64Data = await blobToBase64(zipBlob);
+        
+        // Write file to Cache directory
+        const writeResult = await Filesystem.writeFile({
+          path: exportName,
+          data: base64Data,
+          directory: Directory.Cache
         });
-        setStatusMessage('تمت مشاركة وحفظ الملف بنجاح!');
+
+        setStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
+        // Share via native popup so user can save or send anywhere they want
+        await Share.share({
+          title: 'نسخة ترانيم الاحتياطية',
+          text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات من تطبيق ترانيم',
+          url: writeResult.uri,
+          dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
+        });
+
+        setStatusMessage('تم إتمام العملية بنجاح!');
       } else {
-        const url = URL.createObjectURL(zipBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = exportName;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 100);
-        setStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح!');
+        const file = new File([zipBlob], exportName, { type: "application/zip" });
+        const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        
+        if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: "نسخة ترانيم الاحتياطية",
+          });
+          setStatusMessage('تمت مشاركة وحفظ الملف بنجاح!');
+        } else {
+          const url = URL.createObjectURL(zipBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = exportName;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 100);
+          setStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح!');
+        }
       }
     } catch (err: any) {
       console.error("Local backup failed", err);
-      setStatusMessage('فشل إعداد النسخة الاحتياطية المحلية.');
+      setStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsLoading(false);
       setTimeout(() => setStatusMessage(null), 4000);
