@@ -89,6 +89,7 @@ export default function GoogleDriveBackupModal({
 
   const handleCreateBackup = async () => {
     if (!accessToken) return;
+    if (isUploading || isLoading) return;
     setIsUploading(true);
     setStatusMessage('جاري إعداد النسخة الاحتياطية...');
     try {
@@ -157,17 +158,22 @@ export default function GoogleDriveBackupModal({
 
   // Local Import / Export Functions
   const handleLocalExport = async (method: 'save' | 'share' = 'share') => {
+    if (isLoading || isUploading) return;
     setIsLoading(true);
     setStatusMessage('جاري تجهيز النسخة الاحتياطية (ZIP)...');
     try {
       const zipBlob = await createBackupZip();
-      const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
+      
+      const now = new Date();
+      const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+      const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
+      const exportName = `traneem_backup_${datePart}_${timePart}.zip`;
 
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
 
         // Write file in safe chunks to avoid WebView memory crashes on Android
-        const CHUNK_SIZE = 786432; // 768 KB (Strictly divisible by 3 so Base64 chunks concatenate perfectly without padding issues)
+        const CHUNK_SIZE = 3145728; // 3 MB (Strictly divisible by 3 so Base64 chunks concatenate perfectly without padding issues)
         const totalSize = zipBlob.size;
         let numChunks = Math.ceil(totalSize / CHUNK_SIZE);
         if (numChunks === 0) numChunks = 1;
@@ -364,12 +370,13 @@ export default function GoogleDriveBackupModal({
               </div>
             </div>
 
-            {Capacitor.isNativePlatform() ? (
+             {Capacitor.isNativePlatform() ? (
               <div className="flex flex-col gap-3 pt-2">
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => handleLocalExport('save')}
-                    className="flex flex-col items-center justify-center gap-2 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                    disabled={isLoading || isUploading}
+                    className="flex flex-col items-center justify-center gap-2 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -379,7 +386,8 @@ export default function GoogleDriveBackupModal({
 
                   <button
                     onClick={() => handleLocalExport('share')}
-                    className="flex flex-col items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                    disabled={isLoading || isUploading}
+                    className="flex flex-col items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
@@ -390,7 +398,8 @@ export default function GoogleDriveBackupModal({
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3.5 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                  disabled={isLoading || isUploading}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3.5 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
@@ -402,7 +411,8 @@ export default function GoogleDriveBackupModal({
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <button
                   onClick={() => handleLocalExport('save')}
-                  className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                  disabled={isLoading || isUploading}
+                  className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
@@ -412,7 +422,8 @@ export default function GoogleDriveBackupModal({
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                  disabled={isLoading || isUploading}
+                  className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />

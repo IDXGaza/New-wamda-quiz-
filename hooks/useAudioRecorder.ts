@@ -4,17 +4,15 @@ import { Capacitor } from '@capacitor/core';
 const requestMicPermission = async (): Promise<boolean> => {
   if (Capacitor.isNativePlatform()) {
     try {
-      // Use dynamic string with /* @vite-ignore */ to prevent Vite from analyzing it statically during build, 
-      // which fails because the community package is a runtime native-only plugin.
-      const moduleName = '@capacitor-community/microphone';
-      // @ts-ignore
-      const { Microphone } = await import(/* @vite-ignore */ moduleName);
-      if (Microphone) {
-        const status = await Microphone.requestPermission();
-        return status.microphone === 'granted';
+      const { VoiceRecorder } = await import('capacitor-voice-recorder');
+      const hasPermission = await VoiceRecorder.hasAudioRecordingPermission();
+      if (hasPermission.value) {
+        return true;
       }
+      const status = await VoiceRecorder.requestAudioRecordingPermission();
+      return status.value;
     } catch (e) {
-      console.warn("Capacitor microphone plugin import/request failed, trying global fallback", e);
+      console.warn("Capacitor voice recorder plugin request failed, trying fallback", e);
     }
     
     // Fallback to checking globally registered plugins
@@ -29,7 +27,8 @@ const requestMicPermission = async (): Promise<boolean> => {
     }
   }
   try {
-    await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(track => track.stop());
     return true;
   } catch (err) {
     console.error("Web getUserMedia failed:", err);
@@ -65,6 +64,13 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       setRecordingTime(0);
       recordingTimeRef.current = 0;
       
+      console.log("Checking microphone permission...");
+      const hasPermission = await requestMicPermission();
+      if (!hasPermission) {
+        alert("لم يتم منح صلاحية الميكروفون. الرجاء تفعيلها من إعدادات الهاتف.");
+        return;
+      }
+
       console.log("Requesting microphone stream...");
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: true
