@@ -100,18 +100,12 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       console.log("Checking and requesting microphone permission at runtime...");
       const hasPermission = await requestMicPermission();
       if (!hasPermission) {
-        alert("لم يتم منح صلاحية الميكروفون. الرجاء تفعيلها من إعدادات الهاتف أو المتصفح لتتمكن من التسجيل.");
+        alert("لم يتم منح صلاحية الميكروفون. الرجاء تفعيلها من إعدادات التطبيق.");
         return;
       }
       
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          sampleRate: 48000,
-          channelCount: 2,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        } 
+        audio: true
       });
 
       // Setup audio analyzer for visualizer

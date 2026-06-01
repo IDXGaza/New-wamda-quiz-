@@ -496,7 +496,13 @@ const App: React.FC = () => {
           coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
         }));
         setTracks(tracksWithUrls);
-        if (tracksWithUrls.length > 0) setCurrentTrackIndex(0);
+        const restoredId = localStorage.getItem('lastPlayedTrackId');
+        const restoredIndex = tracksWithUrls.findIndex(t => t.id === restoredId);
+        if (restoredIndex !== -1) {
+          setCurrentTrackIndex(restoredIndex);
+        } else if (tracksWithUrls.length > 0) {
+          setCurrentTrackIndex(0);
+        }
       } catch (e) {
         console.error("Failed to load tracks from DB", e);
       }
@@ -505,6 +511,8 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectTrack = (index: number) => {
+    const track = tracks[index];
+    if (track) localStorage.setItem('lastPlayedTrackId', track.id);
     setCurrentTrackIndex(index);
     setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
   };
@@ -956,9 +964,9 @@ const App: React.FC = () => {
                   className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-2"
                 >
                   <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
                   </svg>
-                  النسخ الاحتياطي السحابي (Drive)
+                  النسخ الاحتياطي والاستعادة 🔄
                 </button>
                 
                 <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
