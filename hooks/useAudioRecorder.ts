@@ -65,14 +65,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       setRecordingTime(0);
       recordingTimeRef.current = 0;
       
-      // Request microphone runtime permission using Web/Capacitor runtime API
-      console.log("Checking and requesting microphone permission at runtime...");
-      const hasPermission = await requestMicPermission();
-      if (!hasPermission) {
-        alert("لم يتم منح صلاحية الميكروفون. الرجاء تفعيلها من إعدادات التطبيق.");
-        return;
-      }
-      
+      console.log("Requesting microphone stream...");
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: true
       });

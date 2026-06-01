@@ -156,7 +156,7 @@ export default function GoogleDriveBackupModal({
   };
 
   // Local Import / Export Functions
-  const handleLocalExport = async () => {
+  const handleLocalExport = async (method: 'save' | 'share' = 'share') => {
     setIsLoading(true);
     setStatusMessage('جاري تجهيز النسخة الاحتياطية (ZIP)...');
     try {
@@ -165,7 +165,6 @@ export default function GoogleDriveBackupModal({
 
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { Share } = await import('@capacitor/share');
 
         // Write file in safe chunks to avoid WebView memory crashes on Android
         const CHUNK_SIZE = 786432; // 768 KB (Strictly divisible by 3 so Base64 chunks concatenate perfectly without padding issues)
@@ -173,11 +172,13 @@ export default function GoogleDriveBackupModal({
         let numChunks = Math.ceil(totalSize / CHUNK_SIZE);
         if (numChunks === 0) numChunks = 1;
 
+        const targetDirectory = method === 'save' ? Directory.Documents : Directory.Cache;
+
         // Ensure we delete any pre-existing file of the same name before writing
         try {
           await Filesystem.deleteFile({
             path: exportName,
-            directory: Directory.Cache
+            directory: targetDirectory
           });
         } catch (e) {
           // Ignore if it doesn't exist
@@ -207,28 +208,33 @@ export default function GoogleDriveBackupModal({
             const result = await Filesystem.writeFile({
               path: exportName,
               data: base64Chunk,
-              directory: Directory.Cache
+              directory: targetDirectory
             });
             firstChunkUri = result.uri;
           } else {
             await Filesystem.appendFile({
               path: exportName,
               data: base64Chunk,
-              directory: Directory.Cache
+              directory: targetDirectory
             });
           }
         }
 
-        setStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
-        // Share via native popup so user can save or send anywhere they want
-        await Share.share({
-          title: 'نسخة ترانيم الاحتياطية',
-          text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات من تطبيق ترانيم',
-          url: firstChunkUri,
-          dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
-        });
-
-        setStatusMessage('تم إتمام العملية بنجاح!');
+        if (method === 'share') {
+          const { Share } = await import('@capacitor/share');
+          setStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
+          // Share via native popup so user can save or send anywhere they want
+          await Share.share({
+            title: 'نسخة ترانيم الاحتياطية',
+            text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات من تطبيق ترانيم',
+            url: firstChunkUri,
+            dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
+          });
+          setStatusMessage('تم إتمام العملية بنجاح!');
+        } else {
+          setStatusMessage('تم حفظ الملف بنجاح!');
+          alert(`تم حفظ النسخة الاحتياطية بنجاح وبشكل مباشر على جهازك 💾\n\nاسم الملف:\n${exportName}\n\nتجدها في مدير ملفات هاتفك داخل المجلد الرئيسي ⬅️ مجلد المستندات (Documents).`);
+        }
       } else {
         const file = new File([zipBlob], exportName, { type: "application/zip" });
         const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -355,33 +361,66 @@ export default function GoogleDriveBackupModal({
               </div>
               <div className="space-y-1 text-right">
                 <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">1. النسخ الاحتياطي المحلي والتصدير (يعمل مع الـ APK 🚀)</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-bold">
-                  سريع ويعمل أوفلاين بالكامل! يصدر كامل ألحانك وتسجيلاتك في ملف مضغوط <span className="text-[#4da8ab]">ZIP</span> واحد يمكنك حفظه بهاتفك أو مشاركته (ويمكنك رفعه يدوياً لحساب الـ Google Drive الخاص بك).
-                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                onClick={handleLocalExport}
-                className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all"
-              >
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
-                <span>تصدير نسخة (ZIP)</span>
-              </button>
+            {Capacitor.isNativePlatform() ? (
+              <div className="flex flex-col gap-3 pt-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => handleLocalExport('save')}
+                    className="flex flex-col items-center justify-center gap-2 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    <span>حفظ مباشر للهاتف 💾</span>
+                  </button>
 
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all"
-              >
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
-                </svg>
-                <span>استيراد ملف (ZIP)</span>
-              </button>
-            </div>
+                  <button
+                    onClick={() => handleLocalExport('share')}
+                    className="flex flex-col items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                    <span>مشاركة (تليجرام...) 📤</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3.5 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
+                  </svg>
+                  <span>استيراد ملف نسخة احتياطية (ZIP) 📂</span>
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  onClick={() => handleLocalExport('save')}
+                  className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                  <span>تصدير نسخة (ZIP)</span>
+                </button>
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
+                  </svg>
+                  <span>استيراد ملف (ZIP)</span>
+                </button>
+              </div>
+            )}
             
             <input 
               type="file" 
@@ -400,10 +439,6 @@ export default function GoogleDriveBackupModal({
 
             {!accessToken ? (
               <div className="flex flex-col items-center justify-center py-4 text-center space-y-3.5">
-                <p className="text-[11px] text-slate-450 dark:text-slate-400 leading-relaxed font-bold max-w-md">
-                  النسخ الاحتياطي التلقائي بدرايف يتطلب حساباً متوافقاً مع مفاتيح الـ APK الموقعة من بيئة المطورين Google Console. في حال عدم نجاحها، يرجى دائماً استخدام الخيار الأول الفائل في الأعلى (النسخ الاحتياطي المحلي).
-                </p>
-
                 <button 
                   onClick={handleConnect}
                   disabled={isLoading}
