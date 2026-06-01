@@ -167,36 +167,64 @@ export default function GoogleDriveBackupModal({
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
         const { Share } = await import('@capacitor/share');
 
-        // Helper to convert blob to base64
-        const blobToBase64 = (blob: Blob): Promise<string> => {
-          return new Promise((resolve, reject) => {
+        // Write file in safe chunks to avoid WebView memory crashes on Android
+        const CHUNK_SIZE = 786432; // 768 KB (Strictly divisible by 3 so Base64 chunks concatenate perfectly without padding issues)
+        const totalSize = zipBlob.size;
+        let numChunks = Math.ceil(totalSize / CHUNK_SIZE);
+        if (numChunks === 0) numChunks = 1;
+
+        // Ensure we delete any pre-existing file of the same name before writing
+        try {
+          await Filesystem.deleteFile({
+            path: exportName,
+            directory: Directory.Cache
+          });
+        } catch (e) {
+          // Ignore if it doesn't exist
+        }
+
+        let firstChunkUri = '';
+
+        for (let i = 0; i < numChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, totalSize);
+          const chunkBlob = zipBlob.slice(start, end);
+
+          setStatusMessage(`جاري حفظ وتشفير الملف على الهاتف (${i + 1} / ${numChunks})...`);
+
+          const base64Chunk = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onerror = reject;
             reader.onload = () => {
               const result = reader.result as string;
-              const base64 = result.split(',')[1] || result;
+              const base64 = result.substring(result.indexOf(',') + 1);
               resolve(base64);
             };
-            reader.readAsDataURL(blob);
+            reader.readAsDataURL(chunkBlob);
           });
-        };
 
-        setStatusMessage('جاري تشفير وحفظ الملف على الهاتف...');
-        const base64Data = await blobToBase64(zipBlob);
-        
-        // Write file to Cache directory
-        const writeResult = await Filesystem.writeFile({
-          path: exportName,
-          data: base64Data,
-          directory: Directory.Cache
-        });
+          if (i === 0) {
+            const result = await Filesystem.writeFile({
+              path: exportName,
+              data: base64Chunk,
+              directory: Directory.Cache
+            });
+            firstChunkUri = result.uri;
+          } else {
+            await Filesystem.appendFile({
+              path: exportName,
+              data: base64Chunk,
+              directory: Directory.Cache
+            });
+          }
+        }
 
         setStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
         // Share via native popup so user can save or send anywhere they want
         await Share.share({
           title: 'نسخة ترانيم الاحتياطية',
           text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات من تطبيق ترانيم',
-          url: writeResult.uri,
+          url: firstChunkUri,
           dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
         });
 

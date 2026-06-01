@@ -147,7 +147,10 @@ const App: React.FC = () => {
     }));
     
     zip.file("metadata.json", JSON.stringify(metadata));
-    return await zip.generateAsync({type: "blob"});
+    return await zip.generateAsync({
+      type: "blob",
+      compression: "STORE"
+    });
   };
 
   const handleRestoreFromZipBlob = async (blob: Blob) => {
@@ -447,7 +450,7 @@ const App: React.FC = () => {
     isRecording,
     isPaused: isRecordingPaused,
     recordingTime,
-    audioData,
+    getAnalyser,
     startRecording,
     stopRecording,
     togglePause: toggleRecordingPause,
@@ -999,9 +1002,8 @@ const App: React.FC = () => {
           <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-center min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
-                recordingTime={recordingTime}
+                getAnalyser={getAnalyser}
                 isPaused={isRecordingPaused}
-                audioData={audioData}
                 onStop={stopRecording}
                 onPause={toggleRecordingPause}
                 onCancel={cancelRecording}
