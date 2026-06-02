@@ -18,6 +18,7 @@ interface GoogleDriveBackupModalProps {
   setIsBackupProcessing: (val: boolean) => void;
   backupStatusMessage: string | null;
   setBackupStatusMessage: (msg: string | null) => void;
+  onBackupSuccess: () => void;
 }
 
 export default function GoogleDriveBackupModal({
@@ -28,7 +29,8 @@ export default function GoogleDriveBackupModal({
   isBackupProcessing,
   setIsBackupProcessing,
   backupStatusMessage,
-  setBackupStatusMessage
+  setBackupStatusMessage,
+  onBackupSuccess
 }: GoogleDriveBackupModalProps) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
@@ -107,6 +109,7 @@ export default function GoogleDriveBackupModal({
       setBackupStatusMessage('جاري رفع الملف إلى Google Drive...');
       await uploadBackupToDrive(zipBlob, accessToken);
       setBackupStatusMessage('تم رفع النسخة الاحتياطية السحابية بنجاح!');
+      onBackupSuccess();
       await loadBackupList();
     } catch (err: any) {
       console.error(err);
@@ -289,6 +292,7 @@ export default function GoogleDriveBackupModal({
           setBackupStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح!');
         }
       }
+      onBackupSuccess();
     } catch (err: any) {
       console.error("Local backup failed", err);
       setBackupStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);

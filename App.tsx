@@ -118,6 +118,36 @@ const App: React.FC = () => {
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [isBackupProcessing, setIsBackupProcessing] = useState(false);
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
+  const [showBackupReminder, setShowBackupReminder] = useState(false);
+
+  // Backup Reminder Logic
+  useEffect(() => {
+    const lastBackupTime = parseInt(localStorage.getItem('lastBackupTime') || '0');
+    const tracksCountAtLastBackup = parseInt(localStorage.getItem('tracksCountAtLastBackup') || '0');
+    
+    if (lastBackupTime === 0) {
+      // First time, initialize
+      localStorage.setItem('lastBackupTime', Date.now().toString());
+      localStorage.setItem('tracksCountAtLastBackup', tracks.length.toString());
+      return;
+    }
+
+    const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+    const hasAddedMoreThanFive = tracks.length - tracksCountAtLastBackup > 5;
+    const isOlderThanSevenDays = (Date.now() - lastBackupTime) > sevenDaysInMs;
+
+    if (hasAddedMoreThanFive && isOlderThanSevenDays) {
+      setShowBackupReminder(true);
+    } else {
+      setShowBackupReminder(false);
+    }
+  }, [tracks.length]);
+
+  const recordSuccessfulBackup = () => {
+    localStorage.setItem('lastBackupTime', Date.now().toString());
+    localStorage.setItem('tracksCountAtLastBackup', tracks.length.toString());
+    setShowBackupReminder(false);
+  };
 
   const createBackupZipBlob = async (): Promise<Blob> => {
     setIsBackupProcessing(true);
@@ -205,6 +235,7 @@ const App: React.FC = () => {
         coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
       }));
       setTracks(withUrls.sort((a, b) => a.order - b.order));
+      recordSuccessfulBackup();
     } finally {
       setIsBackupProcessing(false);
       setBackupStatusMessage(null);
@@ -334,6 +365,8 @@ const App: React.FC = () => {
       console.log("Zip generated size:", zipBlob.size);
       alert("تم إنشاء ملف ZIP");
       
+      recordSuccessfulBackup();
+
       const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
       
       // Try sharing natively first if on mobile, otherwise download
@@ -1083,6 +1116,8 @@ const App: React.FC = () => {
             onPlayRandom={handlePlayRandomTrack}
             isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
             isRecording={isRecording} onStartRecording={handleStartRecording}
+            showBackupReminder={showBackupReminder}
+            onOpenBackup={() => setIsDriveModalOpen(true)}
           />
         </div>
         
@@ -1181,6 +1216,7 @@ const App: React.FC = () => {
         setIsBackupProcessing={setIsBackupProcessing}
         backupStatusMessage={backupStatusMessage}
         setBackupStatusMessage={setBackupStatusMessage}
+        onBackupSuccess={recordSuccessfulBackup}
       />
     </div>
   );
