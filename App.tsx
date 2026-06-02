@@ -597,6 +597,13 @@ const App: React.FC = () => {
     }
   };
 
+  // Request notification permission to improve visibility in some browsers
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   const handleSkip = (seconds: number) => {
     const audio = audioRef.current;
     if (audio) {
@@ -611,6 +618,9 @@ const App: React.FC = () => {
     if (audio) {
       audio.pause();
       setPlayerState(prev => ({ ...prev, isPlaying: false }));
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
     }
   };
 
@@ -619,7 +629,11 @@ const App: React.FC = () => {
     if (audio) {
       initAudioCtx();
       setPlayerState(prev => ({ ...prev, isPlaying: true }));
-      audio.play().catch(err => {
+      audio.play().then(() => {
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'playing';
+        }
+      }).catch(err => {
         console.error("Playback failed:", err);
         setPlayerState(prev => ({ ...prev, isPlaying: false }));
       });
@@ -632,7 +646,14 @@ const App: React.FC = () => {
         title: currentTrack.name,
         artist: currentTrack.artist || 'ترانيم',
         album: 'مكتبتي',
-        artwork: [{ src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' }]
+        artwork: [
+          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
+          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
+          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
+          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
+          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
+          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
+        ]
       });
 
       navigator.mediaSession.setActionHandler('play', handlePlay);
@@ -698,6 +719,20 @@ const App: React.FC = () => {
         navigator.mediaSession.playbackState = 'playing';
       }
       updateMediaSessionPosition();
+
+      // Show a real notification if permitted
+      if ('Notification' in window && Notification.permission === 'granted' && currentTrack) {
+        try {
+          new Notification('جارٍ التشغيل الآن', {
+            body: currentTrack.name,
+            icon: currentTrack.coverUrl || UNIFORM_PLACEHOLDER,
+            silent: true,
+            tag: 'traneem-player'
+          });
+        } catch (e) {
+          // Some browsers don't support silent or tag
+        }
+      }
     };
     
     const onPause = () => {
