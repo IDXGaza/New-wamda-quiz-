@@ -59,9 +59,18 @@ const Sidebar: React.FC<SidebarProps> = ({
   const filteredTracksWithIndices = tracks
     .map((track, originalIndex) => ({ track, originalIndex }))
     .filter(item => {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = item.track.name.toLowerCase().includes(searchLower) ||
-        (item.track.artist && item.track.artist.toLowerCase().includes(searchLower));
+      const searchLower = searchTerm.toLowerCase().trim();
+      if (!searchLower) return (view === 'all' || 
+                         (view === 'record' && item.track.sourceType === 'record') ||
+                         (view === 'import' && (item.track.sourceType === 'import' || !item.track.sourceType)));
+                         
+      const searchWords = searchLower.split(/\s+/);
+      const trackNameLower = item.track.name.toLowerCase();
+      const trackArtistLower = (item.track.artist || "").toLowerCase();
+      
+      const matchesSearch = searchWords.every(word => 
+        trackNameLower.includes(word) || trackArtistLower.includes(word)
+      );
       
       const matchesType = view === 'all' || 
                          (view === 'record' && item.track.sourceType === 'record') ||
@@ -220,9 +229,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     <>
       <div className={`fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[60] xl:hidden transition-all duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={onClose} />
       
-      <aside className={`fixed xl:relative inset-y-0 right-0 w-[85%] sm:w-80 bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl xl:shadow-none z-[70] transition-all duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : 'translate-x-full xl:translate-x-0'}`}>
-        <div className="p-8 shrink-0 space-y-6">
-          <div className="flex items-center justify-between">
+      <aside className={`fixed xl:relative inset-y-0 right-0 w-[85%] sm:w-[400px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl xl:shadow-none z-[70] transition-all duration-300 ease-in-out transform ${isOpen ? 'translate-x-0' : 'translate-x-full xl:translate-x-0'}`}>
+        <div className="pt-6 px-6 pb-2 shrink-0 space-y-3">
+          <div className="flex items-center justify-between pb-1">
             <h1 className="text-3xl font-black text-[#4da8ab] tracking-tighter">ترانيم</h1>
             <div className="flex items-center gap-2">
               <button onClick={onClose} className="xl:hidden p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
@@ -233,8 +242,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           
           <div className="flex gap-2 w-full relative">
             <div className="block flex-1 relative">
-              <div className={`relative w-full bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 overflow-hidden text-sm ${isRecording ? 'opacity-50 pointer-events-none' : 'cursor-pointer active:scale-[0.98]'}`}>
-                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+              <div className={`relative w-full bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 text-xs ${isRecording ? 'opacity-50 pointer-events-none' : 'cursor-pointer active:scale-[0.98]'}`}>
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
                 <span>استيراد لحن</span>
               </div>
               <input 
@@ -253,7 +262,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (onClose) onClose(); // close sidebar on mobile if it was open
               }}
               disabled={isRecording}
-              className={`flex-1 w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 overflow-hidden text-sm active:scale-[0.98] ${isRecording ? 'opacity-50 pointer-events-none relative' : ''}`}
+              className={`flex-1 w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-2 rounded-[20px] transition-all shadow-lg flex items-center justify-center gap-2 text-xs active:scale-[0.98] ${isRecording ? 'opacity-50 pointer-events-none relative' : ''}`}
             >
               {isRecording ? (
                  <>
@@ -273,9 +282,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           <button 
             onClick={() => { onPlayRandom(); if (onClose) onClose(); }}
             disabled={isRecording || tracks.length === 0}
-            className={`w-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold py-3 px-2 rounded-[20px] transition-all shadow-sm flex items-center justify-center gap-2 overflow-hidden text-sm active:scale-[0.98] ${isRecording || tracks.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}
+            className={`w-full bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold py-1.5 px-2 rounded-[14px] transition-all shadow-sm flex items-center justify-center gap-2 overflow-hidden text-[11px] active:scale-[0.98] ${isRecording || tracks.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}
           >
-            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span>تجربة عشوائية</span>
           </button>
 
@@ -285,7 +294,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               placeholder="بحث عن نشيد..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pr-10 pl-4 text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4da8ab]/20 focus:bg-white dark:focus:bg-slate-800 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-2 pr-10 pl-4 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4da8ab]/20 focus:bg-white dark:focus:bg-slate-800 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
             />
             <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-[#4da8ab] transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -323,7 +332,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                    }
                    setDragOverCategory(null);
                  }}
-                 className={`flex-1 text-[10px] font-bold py-2 rounded-lg transition-all ${
+                 className={`flex-1 text-[9px] font-bold py-1.5 rounded-lg transition-all ${
                    dragOverCategory === v.id
                      ? 'bg-emerald-500 text-white dark:bg-emerald-600 scale-105 shadow-md border border-emerald-400'
                      : view === v.id 
@@ -337,7 +346,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <nav ref={navRef} className="flex-1 overflow-y-auto px-6 pb-40 space-y-4 scroll-container">
+        <nav ref={navRef} className="flex-1 overflow-y-auto px-5 pb-10 space-y-3 scroll-container">
           <div className="flex items-center gap-2 text-slate-300 dark:text-slate-700 px-2">
             <span className="text-[10px] font-black uppercase tracking-[0.3em]">مكتبتك</span>
             <div className="flex-1 h-px bg-slate-50 dark:bg-slate-900" />
@@ -367,8 +376,67 @@ const Sidebar: React.FC<SidebarProps> = ({
                       : 'border-transparent'
                   }`}
                 >
-                  <div className="text-slate-300 dark:text-slate-800 cursor-grab active:cursor-grabbing p-1">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16"/></svg>
+                  <div className="relative group/handle">
+                    <div 
+                      className={`text-slate-300 dark:text-slate-800 hover:text-[#4da8ab] cursor-grab active:cursor-grabbing p-1.5 transition-colors ${openMenuTrackId === item.track.id ? 'text-[#4da8ab]' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuTrackId(openMenuTrackId === item.track.id ? null : item.track.id);
+                      }}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8h16M4 16h16"/></svg>
+                    </div>
+
+                    {openMenuTrackId === item.track.id && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-[190]" 
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); }} 
+                        />
+                        <div 
+                          className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xl py-1.5 z-[200] animate-in fade-in zoom-in-95 duration-100 text-right font-Cairo"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="px-3 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800/40 mb-1 select-none">
+                            نقل وتصنيف اللحن إلى:
+                          </div>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleSourceType(item.track.id, 'import');
+                              setOpenMenuTrackId(null);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType !== 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
+                          >
+                            <span className="flex items-center gap-1.5 font-Cairo">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+                              <span>أناشيد مستوردة</span>
+                            </span>
+                            {item.track.sourceType !== 'record' && (
+                              <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleSourceType(item.track.id, 'record');
+                              setOpenMenuTrackId(null);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType === 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
+                          >
+                            <span className="flex items-center gap-1.5 font-Cairo">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                              <span>تسجيلات صوتية</span>
+                            </span>
+                            {item.track.sourceType === 'record' && (
+                              <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div 
@@ -393,106 +461,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                     <div className="flex-1 min-w-0 text-right overflow-hidden pointer-events-none select-none">
                       <div className="flex items-center justify-end gap-1.5 mb-0.5">
-                        <p className="font-bold text-xs truncate" dir="rtl" title={item.track.name}>
+                        <p className="font-extrabold text-[14px] leading-tight" dir="rtl" title={item.track.name}>
                           {item.track.name}
                         </p>
                       </div>
-                      <p className="text-[10px] opacity-50 font-bold mt-1 truncate" title={item.track.artist || "ملف صوتي"}>
+                      <p className="text-[10px] opacity-60 font-bold mt-1 truncate" dir="rtl" title={item.track.artist || "ملف صوتي"}>
                         {item.track.artist || "ملف صوتي"}
                       </p>
                     </div>
-                  </div>
-                  
-                  <div className="relative">
-                    <button 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        setOpenMenuTrackId(openMenuTrackId === item.track.id ? null : item.track.id);
-                      }} 
-                      onTouchEnd={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setOpenMenuTrackId(openMenuTrackId === item.track.id ? null : item.track.id);
-                      }}
-                      onTouchStart={(e) => e.stopPropagation()}
-                      onTouchMove={(e) => e.stopPropagation()}
-                      disabled={isRecording}
-                      className={`p-2.5 text-slate-500 hover:text-[#4da8ab] dark:text-slate-500/70 dark:hover:text-[#4da8ab] bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-full transition-all active:scale-90 ml-1 shrink-0 ${isRecording ? 'opacity-50 pointer-events-none' : ''} ${openMenuTrackId === item.track.id ? 'text-[#4da8ab] bg-[#4da8ab]/10' : ''}`}
-                      title="تصنيف ونقل الأنشودة"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
-                    </button>
-
-                    {openMenuTrackId === item.track.id && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-[190]" 
-                          onClick={(e) => { e.stopPropagation(); setOpenMenuTrackId(null); }} 
-                          onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setOpenMenuTrackId(null); }}
-                          onTouchStart={(e) => e.stopPropagation()}
-                          onTouchMove={(e) => e.stopPropagation()}
-                        />
-                        <div 
-                          className="absolute right-0 mt-1 w-44 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-xl py-1.5 z-[200] animate-in fade-in zoom-in-95 duration-100 text-right font-Cairo"
-                          onClick={(e) => e.stopPropagation()}
-                          onTouchStart={(e) => e.stopPropagation()}
-                          onTouchMove={(e) => e.stopPropagation()}
-                          onTouchEnd={(e) => e.stopPropagation()}
-                        >
-                          <div className="px-3 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 dark:border-slate-800/40 mb-1 select-none">
-                            نقل وتصنيف اللحن إلى:
-                          </div>
-                          
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleSourceType(item.track.id, 'import');
-                              setOpenMenuTrackId(null);
-                            }}
-                            onTouchEnd={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              onToggleSourceType(item.track.id, 'import');
-                              setOpenMenuTrackId(null);
-                            }}
-                            onTouchStart={(e) => e.stopPropagation()}
-                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType !== 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
-                          >
-                            <span className="flex items-center gap-1.5 font-Cairo">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
-                              <span>أناشيد مستوردة</span>
-                            </span>
-                            {item.track.sourceType !== 'record' && (
-                              <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                            )}
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleSourceType(item.track.id, 'record');
-                              setOpenMenuTrackId(null);
-                            }}
-                            onTouchEnd={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              onToggleSourceType(item.track.id, 'record');
-                              setOpenMenuTrackId(null);
-                            }}
-                            onTouchStart={(e) => e.stopPropagation()}
-                            className={`w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold transition-colors text-right rounded-lg hover:bg-slate-50 dark:hover:bg-slate-850 ${item.track.sourceType === 'record' ? 'text-[#4da8ab]' : 'text-slate-600 dark:text-slate-300'}`}
-                          >
-                            <span className="flex items-center gap-1.5 font-Cairo">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                              <span>تسجيلات صوتية</span>
-                            </span>
-                            {item.track.sourceType === 'record' && (
-                              <svg className="w-3 h-3 text-[#4da8ab]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                            )}
-                          </button>
-                        </div>
-                      </>
-                    )}
                   </div>
                   
                   <button 

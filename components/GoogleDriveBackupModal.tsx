@@ -14,19 +14,25 @@ interface GoogleDriveBackupModalProps {
   onClose: () => void;
   createBackupZip: () => Promise<Blob>;
   restoreBackupZip: (blob: Blob) => Promise<void>;
+  isBackupProcessing: boolean;
+  setIsBackupProcessing: (val: boolean) => void;
+  backupStatusMessage: string | null;
+  setBackupStatusMessage: (msg: string | null) => void;
 }
 
 export default function GoogleDriveBackupModal({
   isOpen,
   onClose,
   createBackupZip,
-  restoreBackupZip
+  restoreBackupZip,
+  isBackupProcessing,
+  setIsBackupProcessing,
+  backupStatusMessage,
+  setBackupStatusMessage
 }: GoogleDriveBackupModalProps) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,17 +58,17 @@ export default function GoogleDriveBackupModal({
   const loadBackupList = async () => {
     if (!accessToken) return;
     setIsLoading(true);
-    setStatusMessage(null);
+    setBackupStatusMessage(null);
     try {
       const list = await listBackupsInDrive(accessToken);
       setBackups(list);
     } catch (err: any) {
       console.error(err);
       if (err.message === 'ExpiredToken') {
-        setStatusMessage('انتهت صلاحية الجلسة. يرجى إعادة تسجيل الدخول.');
+        setBackupStatusMessage('انتهت صلاحية الجلسة. يرجى إعادة تسجيل الدخول.');
         setAccessToken(null);
       } else {
-        setStatusMessage('فشل في تحميل قائمة نسخ قوقل درايف.');
+        setBackupStatusMessage('فشل في تحميل قائمة نسخ قوقل درايف.');
       }
     } finally {
       setIsLoading(false);
@@ -71,13 +77,13 @@ export default function GoogleDriveBackupModal({
 
   const handleConnect = async () => {
     setIsLoading(true);
-    setStatusMessage(null);
+    setBackupStatusMessage(null);
     try {
       const { getAccessToken } = await import('../services/googleDrive');
       const accessToken = await getAccessToken();
       setAccessToken(accessToken);
     } catch (err: any) {
-      setStatusMessage(`فشل الاتصال بدرايف: ${err?.message || 'خطأ غير معروف'}`);
+      setBackupStatusMessage(`فشل الاتصال بدرايف: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsLoading(false);
     }
@@ -90,33 +96,31 @@ export default function GoogleDriveBackupModal({
 
   const handleCreateBackup = async () => {
     if (!accessToken) return;
-    if (isUploading || isLoading || activeActionId || isProcessingRef.current) {
-      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+    if (isBackupProcessing || isLoading || activeActionId) {
+      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
       return;
     }
-    isProcessingRef.current = true;
-    setIsUploading(true);
-    setStatusMessage('جاري إعداد النسخة الاحتياطية...');
+    setIsBackupProcessing(true);
+    setBackupStatusMessage('جاري إعداد النسخة الاحتياطية...');
     try {
       const zipBlob = await createBackupZip();
-      setStatusMessage('جاري رفع الملف إلى Google Drive...');
+      setBackupStatusMessage('جاري رفع الملف إلى Google Drive...');
       await uploadBackupToDrive(zipBlob, accessToken);
-      setStatusMessage('تم رفع النسخة الاحتياطية السحابية بنجاح!');
+      setBackupStatusMessage('تم رفع النسخة الاحتياطية السحابية بنجاح!');
       await loadBackupList();
     } catch (err: any) {
       console.error(err);
-      setStatusMessage('فشل رفع النسخة الاحتياطية للسحابة.');
+      setBackupStatusMessage('فشل رفع النسخة الاحتياطية للسحابة.');
     } finally {
-      setIsUploading(false);
-      isProcessingRef.current = false;
-      setTimeout(() => setStatusMessage(null), 4000);
+      setIsBackupProcessing(false);
+      setTimeout(() => setBackupStatusMessage(null), 4000);
     }
   };
 
   const handleRestoreBackup = async (file: DriveBackupFile) => {
     if (!accessToken) return;
-    if (isUploading || isLoading || activeActionId || isProcessingRef.current) {
-      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+    if (isBackupProcessing || isLoading || activeActionId) {
+      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
       return;
     }
     
@@ -125,30 +129,30 @@ export default function GoogleDriveBackupModal({
     );
     if (!confirmed) return;
 
-    isProcessingRef.current = true;
+    setIsBackupProcessing(true);
     setActiveActionId(file.id);
-    setStatusMessage('جاري تحميل ملف الاستعادة من Google Drive...');
+    setBackupStatusMessage('جاري تحميل ملف الاستعادة من Google Drive...');
     try {
       const blob = await downloadBackupFromDrive(file.id, accessToken);
-      setStatusMessage('جاري فك واستعادة البيانات...');
+      setBackupStatusMessage('جاري فك واستعادة البيانات...');
       await restoreBackupZip(blob);
-      setStatusMessage('تمت استعادة النسخة الاحتياطية بنجاح!');
+      setBackupStatusMessage('تمت استعادة النسخة الاحتياطية بنجاح!');
       alert('تمت استعادة الأناشيد والبيانات بنجاح!');
     } catch (err: any) {
       console.error(err);
-      setStatusMessage('فشل في استعادة النسخة الاحتياطية.');
+      setBackupStatusMessage('فشل في استعادة النسخة الاحتياطية.');
       alert('فشل في استعادة النسخة الاحتياطية.');
     } finally {
       setActiveActionId(null);
-      isProcessingRef.current = false;
-      setTimeout(() => setStatusMessage(null), 4000);
+      setIsBackupProcessing(false);
+      setTimeout(() => setBackupStatusMessage(null), 4000);
     }
   };
 
   const handleDeleteBackup = async (file: DriveBackupFile) => {
     if (!accessToken) return;
-    if (isUploading || isLoading || activeActionId || isProcessingRef.current) {
-      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+    if (isBackupProcessing || isLoading || activeActionId) {
+      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
       return;
     }
 
@@ -157,32 +161,31 @@ export default function GoogleDriveBackupModal({
     );
     if (!confirmed) return;
 
-    isProcessingRef.current = true;
+    setIsBackupProcessing(true);
     setActiveActionId(file.id);
-    setStatusMessage('جاري حذف الملف من Google Drive...');
+    setBackupStatusMessage('جاري حذف الملف من Google Drive...');
     try {
       await deleteBackupFromDrive(file.id, accessToken);
       setBackups(prev => prev.filter(b => b.id !== file.id));
-      setStatusMessage('تم حذف النسخة الاحتياطية بنجاح.');
+      setBackupStatusMessage('تم حذف النسخة الاحتياطية بنجاح.');
     } catch (err: any) {
       console.error(err);
-      setStatusMessage('فشل حذف الملف.');
+      setBackupStatusMessage('فشل حذف الملف.');
     } finally {
       setActiveActionId(null);
-      isProcessingRef.current = false;
-      setTimeout(() => setStatusMessage(null), 4000);
+      setIsBackupProcessing(false);
+      setTimeout(() => setBackupStatusMessage(null), 4000);
     }
   };
 
   // Local Import / Export Functions
   const handleLocalExport = async (method: 'save' | 'share' = 'share') => {
-    if (isLoading || isUploading || activeActionId || isProcessingRef.current) {
-      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+    if (isLoading || isBackupProcessing || activeActionId) {
+      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
       return;
     }
-    isProcessingRef.current = true;
-    setIsLoading(true);
-    setStatusMessage('جاري تجهيز النسخة الاحتياطية (ZIP)...');
+    setIsBackupProcessing(true);
+    setBackupStatusMessage('جاري تجهيز النسخة الاحتياطية (ZIP)...');
     try {
       const zipBlob = await createBackupZip();
       
@@ -219,7 +222,7 @@ export default function GoogleDriveBackupModal({
           const end = Math.min(start + CHUNK_SIZE, totalSize);
           const chunkBlob = zipBlob.slice(start, end);
 
-          setStatusMessage(`جاري حفظ وتشفير الملف على الهاتف (${i + 1} / ${numChunks})...`);
+          setBackupStatusMessage(`جاري حفظ وتشفير الملف على الهاتف (${i + 1} / ${numChunks})...`);
 
           const base64Chunk = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -250,7 +253,7 @@ export default function GoogleDriveBackupModal({
 
         if (method === 'share') {
           const { Share } = await import('@capacitor/share');
-          setStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
+          setBackupStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
           // Share via native popup so user can save or send anywhere they want
           await Share.share({
             title: 'نسخة ترانيم الاحتياطية',
@@ -258,9 +261,9 @@ export default function GoogleDriveBackupModal({
             url: firstChunkUri,
             dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
           });
-          setStatusMessage('تم إتمام العملية بنجاح!');
+          setBackupStatusMessage('تم إتمام العملية بنجاح!');
         } else {
-          setStatusMessage('تم حفظ الملف بنجاح!');
+          setBackupStatusMessage('تم حفظ الملف بنجاح!');
           alert(`تم حفظ النسخة الاحتياطية بنجاح وبشكل مباشر على جهازك 💾\n\nاسم الملف:\n${exportName}\n\nتجدها في مدير ملفات هاتفك داخل المجلد الرئيسي ⬅️ مجلد المستندات (Documents).`);
         }
       } else {
@@ -272,7 +275,7 @@ export default function GoogleDriveBackupModal({
             files: [file],
             title: "نسخة ترانيم الاحتياطية",
           });
-          setStatusMessage('تمت مشاركة وحفظ الملف بنجاح!');
+          setBackupStatusMessage('تمت مشاركة وحفظ الملف بنجاح!');
         } else {
           const url = URL.createObjectURL(zipBlob);
           const link = document.createElement('a');
@@ -283,16 +286,15 @@ export default function GoogleDriveBackupModal({
           link.click();
           document.body.removeChild(link);
           setTimeout(() => URL.revokeObjectURL(url), 100);
-          setStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح!');
+          setBackupStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح!');
         }
       }
     } catch (err: any) {
       console.error("Local backup failed", err);
-      setStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
+      setBackupStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
-      setIsLoading(false);
-      isProcessingRef.current = false;
-      setTimeout(() => setStatusMessage(null), 4000);
+      setIsBackupProcessing(false);
+      setTimeout(() => setBackupStatusMessage(null), 4000);
     }
   };
 
@@ -300,27 +302,25 @@ export default function GoogleDriveBackupModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (isLoading || isUploading || activeActionId || isProcessingRef.current) {
-      setStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
+    if (isLoading || isBackupProcessing || activeActionId) {
+      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
       return;
     }
 
-    isProcessingRef.current = true;
-    setIsLoading(true);
-    setStatusMessage('جاري فك واستيراد النسخة الاحتياطية...');
+    setIsBackupProcessing(true);
+    setBackupStatusMessage('جاري فك واستيراد النسخة الاحتياطية...');
     try {
       await restoreBackupZip(file);
-      setStatusMessage('تم استيراد نسخة الأناشيد والملفات الصوتية بنجاح!');
+      setBackupStatusMessage('تم استيراد نسخة الأناشيد والملفات الصوتية بنجاح!');
       alert('تم استيراد الأناشيد وكامل البيانات بنجاح بنسبة 100%!');
     } catch (err: any) {
       console.error("Local restore failed", err);
-      setStatusMessage('فشل الاستعادة. تأكد من صحة ملف الـ ZIP.');
+      setBackupStatusMessage('فشل الاستعادة. تأكد من صحة ملف الـ ZIP.');
       alert('فشل استيراد النسخة! يرجى اختيار ملف ZIP صالح تم تصديره مسبقاً من تطبيق ترانيم.');
     } finally {
-      setIsLoading(false);
-      isProcessingRef.current = false;
+      setIsBackupProcessing(false);
       e.target.value = '';
-      setTimeout(() => setStatusMessage(null), 4000);
+      setTimeout(() => setBackupStatusMessage(null), 4000);
     }
   };
 
@@ -377,13 +377,15 @@ export default function GoogleDriveBackupModal({
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
-          {statusMessage && (
+          {backupStatusMessage && (
             <div className="p-3.5 text-xs text-center font-bold bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] rounded-2xl flex items-center justify-center gap-2 border border-[#4da8ab]/10 animate-pulse">
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <span>{statusMessage}</span>
+              {isBackupProcessing && (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
+              <span>{backupStatusMessage}</span>
             </div>
           )}
 
@@ -405,7 +407,7 @@ export default function GoogleDriveBackupModal({
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => handleLocalExport('save')}
-                    disabled={isLoading || isUploading}
+                    disabled={isLoading || isBackupProcessing}
                     className="flex flex-col items-center justify-center gap-2 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
@@ -416,7 +418,7 @@ export default function GoogleDriveBackupModal({
 
                   <button
                     onClick={() => handleLocalExport('share')}
-                    disabled={isLoading || isUploading}
+                    disabled={isLoading || isBackupProcessing}
                     className="flex flex-col items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
@@ -428,7 +430,7 @@ export default function GoogleDriveBackupModal({
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || isUploading}
+                  disabled={isLoading || isBackupProcessing}
                   className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3.5 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
@@ -441,7 +443,7 @@ export default function GoogleDriveBackupModal({
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <button
                   onClick={() => handleLocalExport('save')}
-                  disabled={isLoading || isUploading}
+                  disabled={isLoading || isBackupProcessing}
                   className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
@@ -452,7 +454,7 @@ export default function GoogleDriveBackupModal({
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || isUploading}
+                  disabled={isLoading || isBackupProcessing}
                   className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
@@ -516,16 +518,16 @@ export default function GoogleDriveBackupModal({
 
                 <button
                   onClick={handleCreateBackup}
-                  disabled={isUploading}
+                  disabled={isBackupProcessing}
                   className="w-full flex items-center justify-center gap-2 bg-gradient-to-l from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl shadow-sm active:scale-[0.98] transition-all disabled:opacity-50"
                 >
-                  {isUploading ? (
+                  {isBackupProcessing ? (
                     <>
                       <svg className="w-4 h-4 animate-spin text-white/95" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
-                      <span>جاري رفع النسخة والنسخ...</span>
+                      <span>جاري معالجة النسخة...</span>
                     </>
                   ) : (
                     <>

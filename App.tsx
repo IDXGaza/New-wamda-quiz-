@@ -116,82 +116,99 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
+  const [isBackupProcessing, setIsBackupProcessing] = useState(false);
+  const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
 
   const createBackupZipBlob = async (): Promise<Blob> => {
-    const allTracks = await getAllTracksFromDB();
-    const zip = new JSZip();
-    
-    const audioFolder = zip.folder("audio");
-    const coversFolder = zip.folder("covers");
-    
-    const metadata = await Promise.all(allTracks.map(async (t) => {
-      const trackMetadata = { ...t };
+    setIsBackupProcessing(true);
+    setBackupStatusMessage('جاري تحضير الملفات...');
+    try {
+      const allTracks = await getAllTracksFromDB();
+      const zip = new JSZip();
       
-      // Handle files
-      if (t.fileBlob) {
-        audioFolder?.file(`${t.id}.blob`, t.fileBlob);
-        trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
-      }
-      if (t.coverBlob) {
-        coversFolder?.file(`${t.id}.blob`, t.coverBlob);
-        trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
-      }
+      const audioFolder = zip.folder("audio");
+      const coversFolder = zip.folder("covers");
       
-      // Cleanup transient data
-      delete trackMetadata.fileBlob;
-      delete trackMetadata.coverBlob;
-      delete trackMetadata.url; // url changes
-      delete trackMetadata.coverUrl; // coverUrl changes
+      const metadata = await Promise.all(allTracks.map(async (t) => {
+        const trackMetadata = { ...t };
+        
+        // Handle files
+        if (t.fileBlob) {
+          audioFolder?.file(`${t.id}.blob`, t.fileBlob);
+          trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
+        }
+        if (t.coverBlob) {
+          coversFolder?.file(`${t.id}.blob`, t.coverBlob);
+          trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
+        }
+        
+        // Cleanup transient data
+        delete trackMetadata.fileBlob;
+        delete trackMetadata.coverBlob;
+        delete trackMetadata.url; // url changes
+        delete trackMetadata.coverUrl; // coverUrl changes
+        
+        return trackMetadata;
+      }));
       
-      return trackMetadata;
-    }));
-    
-    zip.file("metadata.json", JSON.stringify(metadata));
-    return await zip.generateAsync({
-      type: "blob",
-      compression: "STORE"
-    });
+      setBackupStatusMessage('جاري ضغط الملفات (ZIP)...');
+      zip.file("metadata.json", JSON.stringify(metadata));
+      const blob = await zip.generateAsync({
+        type: "blob",
+        compression: "STORE"
+      });
+      return blob;
+    } finally {
+      // Don't set false here if the calling function (modal) still needs to upload/share
+    }
   };
 
   const handleRestoreFromZipBlob = async (blob: Blob) => {
-    const zip = await JSZip.loadAsync(blob);
-    const metadataFile = zip.file("metadata.json");
-    if (!metadataFile) throw new Error("الملف غير صالح (مفقود metadata.json)");
-    
-    const metadata = JSON.parse(await metadataFile.async("string"));
-    
-    for (const t of metadata) {
-      const trackToSave = { ...t };
+    setIsBackupProcessing(true);
+    setBackupStatusMessage('جاري فك واستعادة البيانات...');
+    try {
+      const zip = await JSZip.loadAsync(blob);
+      const metadataFile = zip.file("metadata.json");
+      if (!metadataFile) throw new Error("الملف غير صالح (مفقود metadata.json)");
       
-      // Restore blobs
-      if (t.fileBlobPath) {
-        const audioFile = zip.file(t.fileBlobPath);
-        if (audioFile) {
-          trackToSave.fileBlob = await audioFile.async("blob");
+      const metadata = JSON.parse(await metadataFile.async("string"));
+      
+      for (const t of metadata) {
+        const trackToSave = { ...t };
+        
+        // Restore blobs
+        if (t.fileBlobPath) {
+          const audioFile = zip.file(t.fileBlobPath);
+          if (audioFile) {
+            trackToSave.fileBlob = await audioFile.async("blob");
+          }
+          delete trackToSave.fileBlobPath;
         }
-        delete trackToSave.fileBlobPath;
+        
+        if (t.coverBlobPath) {
+          const coverFile = zip.file(t.coverBlobPath);
+          if (coverFile) {
+            trackToSave.coverBlob = await coverFile.async("blob");
+          }
+          delete trackToSave.coverBlobPath;
+        }
+        trackToSave.sourceType = 'import';
+        
+        await saveTrackToDB(trackToSave);
       }
       
-      if (t.coverBlobPath) {
-        const coverFile = zip.file(t.coverBlobPath);
-        if (coverFile) {
-          trackToSave.coverBlob = await coverFile.async("blob");
-        }
-        delete trackToSave.coverBlobPath;
-      }
-      trackToSave.sourceType = 'import';
-      
-      await saveTrackToDB(trackToSave);
+      // Reload UI
+      const local = await getAllTracksFromDB();
+      const withUrls = local.map(t => ({
+        ...t,
+        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+      }));
+      setTracks(withUrls.sort((a, b) => a.order - b.order));
+    } finally {
+      setIsBackupProcessing(false);
+      setBackupStatusMessage(null);
     }
-    
-    // Reload UI
-    const local = await getAllTracksFromDB();
-    const withUrls = local.map(t => ({
-      ...t,
-      url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-      coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-    }));
-    setTracks(withUrls.sort((a, b) => a.order - b.order));
   };
 
   const [defaultView, setDefaultView] = useState<'all' | 'record' | 'import'>(() => {
@@ -595,7 +612,7 @@ const App: React.FC = () => {
         title: currentTrack.name,
         artist: currentTrack.artist || 'ترانيم',
         album: 'مكتبتي',
-        artwork: [{ src: currentTrack.coverUrl, sizes: '512x512', type: 'image/png' }]
+        artwork: [{ src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' }]
       });
 
       navigator.mediaSession.setActionHandler('play', handlePlayPause);
@@ -649,11 +666,12 @@ const App: React.FC = () => {
     const onWaiting = () => setPlayerState(prev => ({ ...prev, isLoading: true }));
     
     const onPlaying = () => {
-      setPlayerState(prev => ({ ...prev, isLoading: false }));
+      setPlayerState(prev => ({ ...prev, isLoading: false, isPlaying: true }));
       updateMediaSessionPosition();
     };
     
     const onPause = () => {
+      setPlayerState(prev => ({ ...prev, isPlaying: false }));
       updateMediaSessionPosition();
     };
 
@@ -941,46 +959,48 @@ const App: React.FC = () => {
         <div className="flex items-center gap-1 md:gap-3">
           {!isRecording && (
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-[#4da8ab] active:scale-95 transition-transform">
-              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
             </button>
           )}
         </div>
 
         <h1 className="text-xl md:text-2xl font-black text-[#4da8ab] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">ترانيم</h1>
 
-        <div className="relative flex items-center gap-3">
-          <button 
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)} 
-            className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border-2 border-transparent hover:border-slate-200 dark:hover:border-slate-800"
-          >
-            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            </div>
-          </button>
-
-          {isDropdownOpen && (
-            <>
-              <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
-              <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                <button 
-                  onClick={() => { setIsDriveModalOpen(true); setIsDropdownOpen(false); }} 
-                  className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
-                  </svg>
-                  النسخ الاحتياطي والاستعادة 🔄
-                </button>
-                
-                <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                
-                <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                  مشاركة التطبيق
-                </button>
+        <div className="flex items-center gap-1 md:gap-3">
+          <div className="relative flex items-center gap-3">
+            <button 
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)} 
+              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border-2 border-transparent hover:border-slate-200 dark:hover:border-slate-800"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
               </div>
-            </>
-          )}
+            </button>
+
+            {isDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
+                <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <button 
+                    onClick={() => { setIsDriveModalOpen(true); setIsDropdownOpen(false); }} 
+                    className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
+                    </svg>
+                    النسخ الاحتياطي والاستعادة 🔄
+                  </button>
+                  
+                  <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
+                  
+                  <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                    مشاركة التطبيق
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1061,7 +1081,17 @@ const App: React.FC = () => {
 
       <footer className="fixed bottom-0 left-0 right-0 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)]">
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
-        {/* تمت إزالة overflow-hidden من هنا لضمان عمل العناصر المنبثقة مستقبلاً */}
+        
+        {isBackupProcessing && (
+          <div className="max-w-xs mx-auto mb-4 bg-[#4da8ab] text-white py-2 px-4 rounded-full shadow-lg flex items-center justify-center gap-3 animate-bounce pointer-events-auto border border-white/20">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-[10px] font-black">{backupStatusMessage || 'جاري معالجة النسخة...'}</span>
+          </div>
+        )}
+
         {!isRecording && (
           <div className="max-w-3xl mx-auto bg-white/95 dark:bg-black/80 backdrop-blur-3xl border border-white/50 dark:border-slate-800 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.3)] rounded-[32px] pointer-events-auto transition-colors duration-300">
             <Player 
@@ -1079,6 +1109,10 @@ const App: React.FC = () => {
         onClose={() => setIsDriveModalOpen(false)}
         createBackupZip={createBackupZipBlob}
         restoreBackupZip={handleRestoreFromZipBlob}
+        isBackupProcessing={isBackupProcessing}
+        setIsBackupProcessing={setIsBackupProcessing}
+        backupStatusMessage={backupStatusMessage}
+        setBackupStatusMessage={setBackupStatusMessage}
       />
     </div>
   );
