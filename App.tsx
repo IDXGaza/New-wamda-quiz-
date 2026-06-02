@@ -606,6 +606,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handlePause = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      setPlayerState(prev => ({ ...prev, isPlaying: false }));
+    }
+  };
+
+  const handlePlay = () => {
+    const audio = audioRef.current;
+    if (audio) {
+      initAudioCtx();
+      setPlayerState(prev => ({ ...prev, isPlaying: true }));
+      audio.play().catch(err => {
+        console.error("Playback failed:", err);
+        setPlayerState(prev => ({ ...prev, isPlaying: false }));
+      });
+    }
+  };
+
   useEffect(() => {
     if ('mediaSession' in navigator && currentTrack) {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -615,19 +635,17 @@ const App: React.FC = () => {
         artwork: [{ src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' }]
       });
 
-      navigator.mediaSession.setActionHandler('play', handlePlayPause);
-      navigator.mediaSession.setActionHandler('pause', handlePlayPause);
+      navigator.mediaSession.setActionHandler('play', handlePlay);
+      navigator.mediaSession.setActionHandler('pause', handlePause);
       navigator.mediaSession.setActionHandler('previoustrack', () => {
         if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
         else if (currentTrackIndex === 0) handleSelectTrack(tracks.length - 1);
       });
       navigator.mediaSession.setActionHandler('nexttrack', handleSkipToNext);
       navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.fastSeek && audioRef.current && 'fastSeek' in audioRef.current) {
-          (audioRef.current as any).fastSeek(details.seekTime || 0);
-          return;
+        if (details.seekTime !== undefined) {
+          handleSeek(details.seekTime);
         }
-        handleSeek(details.seekTime || 0);
       });
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
         handleSkip(-(details.seekOffset || 10));
@@ -635,8 +653,17 @@ const App: React.FC = () => {
       navigator.mediaSession.setActionHandler('seekforward', (details) => {
         handleSkip(details.seekOffset || 10);
       });
+      navigator.mediaSession.setActionHandler('stop', () => {
+        handlePause();
+      });
+      try {
+        (navigator.mediaSession as any).setActionHandler('togglepause', () => {
+          if (audioRef.current?.paused) handlePlay();
+          else handlePause();
+        });
+      } catch (e) {}
     }
-  }, [currentTrack, currentTrackIndex, tracks.length, playerState.isPlaying]);
+  }, [currentTrack, currentTrackIndex, tracks.length]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -667,11 +694,17 @@ const App: React.FC = () => {
     
     const onPlaying = () => {
       setPlayerState(prev => ({ ...prev, isLoading: false, isPlaying: true }));
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'playing';
+      }
       updateMediaSessionPosition();
     };
     
     const onPause = () => {
       setPlayerState(prev => ({ ...prev, isPlaying: false }));
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = 'paused';
+      }
       updateMediaSessionPosition();
     };
 
