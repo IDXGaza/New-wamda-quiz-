@@ -20,6 +20,9 @@ export interface Track {
   duration: number;
   playbackRate: number;
   order: number;
+  playCount: number;
+  listenTime: number; // In seconds
+  lastPosition?: number;
   fileBlob?: File | Blob;
   coverBlob?: File | Blob;
   sourceType?: 'record' | 'import';

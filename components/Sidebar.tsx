@@ -245,7 +245,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] xl:hidden" 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] lg:hidden" 
             onClick={onClose} 
           />
         )}
@@ -269,12 +269,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           damping: 25, 
           stiffness: 220,
         }}
-        className={`fixed xl:relative inset-y-0 right-0 w-[85%] sm:w-[400px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl xl:shadow-none z-[70] ${isOpen ? 'pointer-events-auto' : 'pointer-events-none xl:pointer-events-auto'}`}
+        className={`fixed lg:relative inset-y-0 right-0 w-[85%] sm:w-[400px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl lg:shadow-none z-[70] ${isOpen ? 'pointer-events-auto' : 'pointer-events-none lg:pointer-events-auto'}`}
       >
         <div className="pt-6 px-6 pb-2 shrink-0 space-y-4">
           <div className="flex items-center justify-between pb-1">
             <h1 className="text-3xl font-black text-[#4da8ab] tracking-tight">ترانيم</h1>
-            <button onClick={onClose} className="xl:hidden p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+            <button onClick={onClose} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
               <X className="w-6 h-6" />
             </button>
           </div>

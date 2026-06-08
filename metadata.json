@@ -2,7 +2,8 @@
   "name": "Remix: Copy of ترانيم - Traneem Cloud",
   "description": "تطبيق موسيقي متطور مع مزامنة سحابية لحفظ مكتبتك الصوتية، العلامات الزمنية، وتخصيص الأغلفة عبر جميع أجهزتك.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "web-share"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

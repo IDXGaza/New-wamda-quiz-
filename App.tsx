@@ -111,7 +111,12 @@ const getAllTracksFromDB = async (): Promise<any[]> => {
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return false;
+  });
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -121,6 +126,25 @@ const App: React.FC = () => {
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
+  const [resumePlaybackEnabled, setResumePlaybackEnabled] = useState(() => {
+    const saved = localStorage.getItem('resumePlaybackEnabled');
+    return saved === null ? true : saved === 'true';
+  });
+  const lastStatsUpdateRef = useRef<number>(0);
+
+  useEffect(() => {
+    localStorage.setItem('resumePlaybackEnabled', resumePlaybackEnabled.toString());
+  }, [resumePlaybackEnabled]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsSidebarOpen(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Backup Reminder Logic
   useEffect(() => {
@@ -405,6 +429,62 @@ const App: React.FC = () => {
   const lastUpdateTimeRef = useRef<number>(0);
   const currentTrack = currentTrackIndex !== null ? tracks[currentTrackIndex] : null;
 
+  useEffect(() => {
+    if (!playerState.isPlaying || !currentTrack) {
+       lastStatsUpdateRef.current = 0;
+       return;
+    }
+
+    lastStatsUpdateRef.current = Date.now();
+    
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const delta = (now - lastStatsUpdateRef.current) / 1000;
+      lastStatsUpdateRef.current = now;
+
+      setTracks(prev => {
+        const index = prev.findIndex(t => t.id === currentTrack.id);
+        if (index === -1) return prev;
+        
+        const updatedTrack = { 
+          ...prev[index], 
+          listenTime: (prev[index].listenTime || 0) + delta,
+          lastPosition: audioRef.current?.currentTime || 0
+        };
+        const newTracks = [...prev];
+        newTracks[index] = updatedTrack;
+        
+        // Periodic save every 30s or on certain delta to avoid hammering IndexedDB
+        if (Math.random() < 0.1) { // roughly every 50s (10% of 5s intervals)
+          saveTrackToDB(updatedTrack).catch(() => {});
+        }
+        
+        return newTracks;
+      });
+    }, 5000);
+
+    return () => {
+      clearInterval(interval);
+      // Final flush on unmount/pause
+      if (lastStatsUpdateRef.current > 0) {
+        const now = Date.now();
+        const delta = (now - lastStatsUpdateRef.current) / 1000;
+        setTracks(prev => prev.map(t => {
+           if (t.id === currentTrack.id) {
+             const updated = { 
+               ...t, 
+               listenTime: (t.listenTime || 0) + delta,
+               lastPosition: audioRef.current?.currentTime || 0
+             };
+             saveTrackToDB(updated).catch(() => {});
+             return updated;
+           }
+           return t;
+        }));
+      }
+    };
+  }, [playerState.isPlaying, currentTrack?.id]);
+
   const {
     isRecording,
     isPaused: isRecordingPaused,
@@ -473,14 +553,42 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectTrack = useCallback((index: number) => {
-    setTracks(prev => {
-       const track = prev[index];
-       if (track) localStorage.setItem('lastPlayedTrackId', track.id);
-       return prev;
-    });
+    const track = tracks[index];
+    if (!track) return;
+    
+    // Increment play count
+    const updatedTrack = { ...track, playCount: (track.playCount || 0) + 1 };
+    setTracks(prev => prev.map((t, i) => i === index ? updatedTrack : t));
+    saveTrackToDB(updatedTrack);
+
+    localStorage.setItem('lastPlayedTrackId', track.id);
     setCurrentTrackIndex(index);
-    setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
-  }, []);
+    setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: track.lastPosition && resumePlaybackEnabled ? track.lastPosition : 0 }));
+    
+    // Attempt play immediately to capture user gesture
+    if (audioRef.current) {
+      initAudioCtx();
+      // Syncing manually here ensures the browser immediately sees the play intent
+      // linked to the actual user tap, bypassing any React async render gaps.
+      try {
+        audioRef.current.src = track.url || "";
+        audioRef.current.load(); // Ensure new src is loaded
+        
+        if (track.lastPosition && resumePlaybackEnabled) {
+          audioRef.current.currentTime = track.lastPosition;
+        }
+
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            if (e.name !== 'NotAllowedError') console.warn("Select track play failed:", e);
+          });
+        }
+      } catch (e) {
+        console.warn("Manual audio sync failed", e);
+      }
+    }
+  }, [tracks, initAudioCtx]);
 
   const handlePlayRandomTrack = useCallback(() => {
     setTracks(prev => {
@@ -598,54 +706,43 @@ const App: React.FC = () => {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: currentTrack.name,
           artist: currentTrack.artist || 'ترانيم',
-          album: 'مكتبتي',
+          album: 'ترانيم - مكتبتي',
           artwork: [
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/jpeg' },
           ]
         });
       } catch (e) {
         console.warn("MediaMetadata failed", e);
       }
 
-      navigator.mediaSession.setActionHandler('play', handlePlay);
-      navigator.mediaSession.setActionHandler('pause', handlePause);
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
-        if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
-        else if (currentTrackIndex === 0 && tracks.length > 0) handleSelectTrack(tracks.length - 1);
-      });
-      navigator.mediaSession.setActionHandler('nexttrack', handleSkipToNext);
-      
-      try {
-        navigator.mediaSession.setActionHandler('seekto', (details) => {
-          if (details.seekTime !== undefined) {
-            handleSeek(details.seekTime);
-          }
-        });
-        navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-          handleSkip(-(details.seekOffset || 10));
-        });
-        navigator.mediaSession.setActionHandler('seekforward', (details) => {
-          handleSkip(details.seekOffset || 10);
-        });
-      } catch (e) {}
+      const handlers = [
+        ['play', handlePlay],
+        ['pause', handlePause],
+        ['previoustrack', () => {
+          if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
+          else if (currentTrackIndex === 0 && tracks.length > 0) handleSelectTrack(tracks.length - 1);
+        }],
+        ['nexttrack', handleSkipToNext],
+        ['seekto', (details: any) => { if (details.seekTime !== undefined) handleSeek(details.seekTime); }],
+        ['seekbackward', (details: any) => handleSkip(-(details.seekOffset || 10))],
+        ['seekforward', (details: any) => handleSkip(details.seekOffset || 10)],
+        ['stop', handlePause]
+      ];
 
-      try {
-        navigator.mediaSession.setActionHandler('stop', handlePause);
-      } catch (e) {}
-
-      try {
-        (navigator.mediaSession as any).setActionHandler('togglepause', () => {
-          if (audioRef.current?.paused) handlePlay();
-          else handlePause();
-        });
-      } catch (e) {}
+      for (const [action, handler] of handlers) {
+        try {
+          navigator.mediaSession.setActionHandler(action as MediaSessionAction, handler as any);
+        } catch (e) {
+          // Action not supported
+        }
+      }
     }
-  }, [currentTrack, currentTrackIndex, tracks.length, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip]);
+  }, [currentTrack, currentTrackIndex, tracks, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -859,7 +956,7 @@ const App: React.FC = () => {
       id, name: file.name.replace(/\.[^/.]+$/, ""), artist: "",
       url: URL.createObjectURL(file), coverUrl: UNIFORM_PLACEHOLDER,
       isFavorite: false, timestamps: [], duration: durationOverride || 0, playbackRate: 1,
-      order: tracks.length, fileBlob: file, sourceType: 'record',
+      order: tracks.length, listenTime: 0, playCount: 0, lastPosition: 0, fileBlob: file, sourceType: 'record',
     };
     
     // Optimistic UI update
@@ -916,8 +1013,9 @@ const App: React.FC = () => {
     
     // Prepare data synchronously to maintain user gesture context
     let fileToShare: File | null = null;
-    if (currentTrack.fileBlob) {
-      try {
+    
+    try {
+      if (currentTrack.fileBlob) {
         let fileName = 'audio.mp3';
         if (currentTrack.fileBlob instanceof File && currentTrack.fileBlob.name) {
           fileName = currentTrack.fileBlob.name;
@@ -926,10 +1024,13 @@ const App: React.FC = () => {
           const extension = mimeType.includes('mpeg') ? 'mp3' : (mimeType.split('/')[1]?.split(';')[0] || 'mp3');
           fileName = `${currentTrack.name.replace(/[\\/:*?"<>|]/g, '_')}.${extension}`;
         }
-        fileToShare = new File([currentTrack.fileBlob], fileName, { type: currentTrack.fileBlob.type || 'audio/mpeg' });
-      } catch (e) {
-        console.warn("Could not create File for sharing:", e);
+        fileToShare = new File([currentTrack.fileBlob], fileName, { 
+          type: currentTrack.fileBlob.type || 'audio/mpeg',
+          lastModified: Date.now()
+        });
       }
+    } catch (e) {
+      console.warn("Could not create File for sharing:", e);
     }
 
     const shareTitle = currentTrack.name;
@@ -938,7 +1039,7 @@ const App: React.FC = () => {
       ? currentTrack.audioUrl 
       : window.location.origin;
 
-    // Direct synchronous-as-possible call
+    // Direct synchronous call to navigator.share to preserve user gesture
     if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
       navigator.share({
         files: [fileToShare],
@@ -946,13 +1047,14 @@ const App: React.FC = () => {
         text: shareText,
       }).catch(err => {
         if (err.name === 'AbortError') return;
-        console.warn('File share failed, falling back to text:', err);
-        // Fallback to basic share if file share fails
-        navigator.share({
-          title: shareTitle,
-          text: shareText,
-          url: shareUrl
-        }).catch(e => console.error("Fallback share also failed:", e));
+        // Fallback to text if file share fails
+        if (navigator.share) {
+          navigator.share({
+            title: shareTitle,
+            text: shareText,
+            url: shareUrl
+          }).catch(() => {});
+        }
       });
     } else if (navigator.share) {
       navigator.share({
@@ -964,12 +1066,12 @@ const App: React.FC = () => {
         console.error('Text share failed:', err);
       });
     } else {
-      // Manual clipboard fallback
+      // Manual fallback
       try {
         navigator.clipboard.writeText(`${shareTitle} - ${shareUrl}`);
         alert('تم نسخ رابط الأنشودة');
       } catch (e) {
-        alert('المشاركة غير مدعومة في هذا المتصفح');
+        alert('المشاركة غير مدعومة');
       }
     }
   };
@@ -996,6 +1098,7 @@ const App: React.FC = () => {
 
   return (
     <div 
+      dir="rtl"
       className={`flex flex-col h-screen h-[100dvh] bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-cairo ${!isRecording ? 'watercolor-bg' : ''} relative transition-colors duration-300`}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -1004,7 +1107,7 @@ const App: React.FC = () => {
       <header className="flex items-center justify-between p-4 bg-white/80 dark:bg-slate-950/80 backdrop-blur-lg border-b border-slate-100 dark:border-slate-800 shrink-0 z-[100] relative">
         <div className="flex items-center gap-1 md:gap-3">
           {!isRecording && (
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-[#4da8ab] active:scale-95 transition-transform">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-[#4da8ab] active:scale-95 transition-transform lg:hidden">
               <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
             </button>
           )}
@@ -1087,7 +1190,7 @@ const App: React.FC = () => {
         )}
         
         <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
-          <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
+          <div className="px-4 py-8 md:px-8 md:py-12 lg:px-16 lg:py-16 max-w-6xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
                 getAnalyser={getAnalyser}
@@ -1098,8 +1201,8 @@ const App: React.FC = () => {
               />
             ) : currentTrack ? (
               <div className="w-full flex flex-col items-center space-y-6 md:space-y-10 animate-in fade-in duration-500">
-                <div className="relative group w-full max-w-[200px] md:max-w-xs lg:max-w-sm shrink-0">
-                  <div className="relative aspect-square w-full overflow-hidden rounded-[40px] md:rounded-[60px] shadow-2xl border-[4px] md:border-[6px] border-white dark:border-slate-900 group-hover:scale-[1.01] transition-all duration-500">
+                <div className="relative group w-full max-w-[200px] md:max-w-[280px] lg:max-w-sm shrink-0">
+                  <div className="relative aspect-square w-full overflow-hidden rounded-[40px] md:rounded-[50px] lg:rounded-[60px] shadow-2xl border-[4px] md:border-[6px] border-white dark:border-slate-900 group-hover:scale-[1.01] transition-all duration-500">
                     <img src={currentTrack.coverUrl} className="w-full h-full object-cover" alt="" />
                     <button onClick={() => coverInputRef.current?.click()} className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white z-20 cursor-pointer">
                       <svg className="w-8 h-8 md:w-12 md:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
@@ -1161,7 +1264,7 @@ const App: React.FC = () => {
         )}
 
         {!isRecording && (
-          <div className="max-w-3xl mx-auto bg-white/95 dark:bg-black/80 backdrop-blur-3xl border border-white/50 dark:border-slate-800 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.3)] rounded-[32px] pointer-events-auto transition-colors duration-300">
+          <div className="max-w-4xl mx-auto bg-white/95 dark:bg-black/80 backdrop-blur-3xl border border-white/50 dark:border-slate-800 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.3)] rounded-[32px] pointer-events-auto transition-colors duration-300">
             <Player 
               track={currentTrack} state={playerState} onPlayPause={handlePlayPause} 
               onSeek={handleSeek} onSkip={handleSkip} onRateChange={handleRateChange} 
@@ -1182,6 +1285,9 @@ const App: React.FC = () => {
         backupStatusMessage={backupStatusMessage}
         setBackupStatusMessage={setBackupStatusMessage}
         onBackupSuccess={recordSuccessfulBackup}
+        tracks={tracks}
+        resumePlaybackEnabled={resumePlaybackEnabled}
+        setResumePlaybackEnabled={setResumePlaybackEnabled}
       />
 
       {cropperData && (

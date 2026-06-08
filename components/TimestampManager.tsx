@@ -26,7 +26,7 @@ const TimestampManager: React.FC<TimestampManagerProps> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {timestamps.length === 0 ? (
           <div className="py-12 text-center bg-white/40 dark:bg-slate-900/40 border border-dashed border-slate-200 dark:border-slate-800 rounded-[24px]">
             <p className="text-slate-400 dark:text-slate-600 text-xs font-bold">لم تضف أي علامات بعد</p>
