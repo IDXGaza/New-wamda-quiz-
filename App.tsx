@@ -126,15 +126,7 @@ const App: React.FC = () => {
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
-  const [resumePlaybackEnabled, setResumePlaybackEnabled] = useState(() => {
-    const saved = localStorage.getItem('resumePlaybackEnabled');
-    return saved === null ? true : saved === 'true';
-  });
   const lastStatsUpdateRef = useRef<number>(0);
-
-  useEffect(() => {
-    localStorage.setItem('resumePlaybackEnabled', resumePlaybackEnabled.toString());
-  }, [resumePlaybackEnabled]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -448,8 +440,7 @@ const App: React.FC = () => {
         
         const updatedTrack = { 
           ...prev[index], 
-          listenTime: (prev[index].listenTime || 0) + delta,
-          lastPosition: audioRef.current?.currentTime || 0
+          listenTime: (prev[index].listenTime || 0) + delta
         };
         const newTracks = [...prev];
         newTracks[index] = updatedTrack;
@@ -473,8 +464,7 @@ const App: React.FC = () => {
            if (t.id === currentTrack.id) {
              const updated = { 
                ...t, 
-               listenTime: (t.listenTime || 0) + delta,
-               lastPosition: audioRef.current?.currentTime || 0
+               listenTime: (t.listenTime || 0) + delta
              };
              saveTrackToDB(updated).catch(() => {});
              return updated;
@@ -563,7 +553,7 @@ const App: React.FC = () => {
 
     localStorage.setItem('lastPlayedTrackId', track.id);
     setCurrentTrackIndex(index);
-    setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: track.lastPosition && resumePlaybackEnabled ? track.lastPosition : 0 }));
+    setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
     
     // Attempt play immediately to capture user gesture
     if (audioRef.current) {
@@ -574,10 +564,6 @@ const App: React.FC = () => {
         audioRef.current.src = track.url || "";
         audioRef.current.load(); // Ensure new src is loaded
         
-        if (track.lastPosition && resumePlaybackEnabled) {
-          audioRef.current.currentTime = track.lastPosition;
-        }
-
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) {
           playPromise.catch(e => {
@@ -706,21 +692,21 @@ const App: React.FC = () => {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: currentTrack.name,
           artist: currentTrack.artist || 'ترانيم',
-          album: 'ترانيم - مكتبتي',
+          album: 'تراييم - مكتبتي',
           artwork: [
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
           ]
         });
       } catch (e) {
         console.warn("MediaMetadata failed", e);
       }
 
-      const handlers = [
+      const handlers: [MediaSessionAction, ((details: any) => void) | null][] = [
         ['play', handlePlay],
         ['pause', handlePause],
         ['previoustrack', () => {
@@ -728,21 +714,30 @@ const App: React.FC = () => {
           else if (currentTrackIndex === 0 && tracks.length > 0) handleSelectTrack(tracks.length - 1);
         }],
         ['nexttrack', handleSkipToNext],
-        ['seekto', (details: any) => { if (details.seekTime !== undefined) handleSeek(details.seekTime); }],
-        ['seekbackward', (details: any) => handleSkip(-(details.seekOffset || 10))],
-        ['seekforward', (details: any) => handleSkip(details.seekOffset || 10)],
+        ['seekto', (details) => { if (details.seekTime !== undefined) handleSeek(details.seekTime); }],
+        ['seekbackward', (details) => handleSkip(-(details.seekOffset || 10))],
+        ['seekforward', (details) => handleSkip(details.seekOffset || 10)],
         ['stop', handlePause]
       ];
 
+      // Use modern toggletrackfavorite if available
+      try {
+        (navigator.mediaSession as any).setActionHandler('toggletrackfavorite', () => {
+          handleToggleFavorite();
+        });
+      } catch (e) { /* ignore */ }
+
       for (const [action, handler] of handlers) {
         try {
-          navigator.mediaSession.setActionHandler(action as MediaSessionAction, handler as any);
+          if (handler) {
+            navigator.mediaSession.setActionHandler(action, handler);
+          }
         } catch (e) {
           // Action not supported
         }
       }
     }
-  }, [currentTrack, currentTrackIndex, tracks, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip]);
+  }, [currentTrack, currentTrackIndex, tracks.length, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -956,7 +951,7 @@ const App: React.FC = () => {
       id, name: file.name.replace(/\.[^/.]+$/, ""), artist: "",
       url: URL.createObjectURL(file), coverUrl: UNIFORM_PLACEHOLDER,
       isFavorite: false, timestamps: [], duration: durationOverride || 0, playbackRate: 1,
-      order: tracks.length, listenTime: 0, playCount: 0, lastPosition: 0, fileBlob: file, sourceType: 'record',
+      order: tracks.length, listenTime: 0, playCount: 0, fileBlob: file, sourceType: 'record',
     };
     
     // Optimistic UI update
@@ -990,17 +985,31 @@ const App: React.FC = () => {
     });
   };
 
-  const handleMoveTrack = async (fromIndex: number, toIndex: number) => {
-    const newTracks = [...tracks];
-    const [movedItem] = newTracks.splice(fromIndex, 1);
-    newTracks.splice(toIndex, 0, movedItem);
-    const updatedTracks = newTracks.map((t, idx) => ({ ...t, order: idx }));
-    setTracks(updatedTracks);
-    const newIdx = updatedTracks.findIndex(t => t.id === currentTrack?.id);
-    if (newIdx !== -1) setCurrentTrackIndex(newIdx);
-    
+  const handleMoveTrack = (fromIndex: number, toIndex: number) => {
+    setTracks(prev => {
+      const newTracks = [...prev];
+      const [movedItem] = newTracks.splice(fromIndex, 1);
+      newTracks.splice(toIndex, 0, movedItem);
+      return newTracks.map((t, idx) => ({ ...t, order: idx }));
+    });
+  };
+
+  // Re-sync currentTrackIndex when tracks order changes to keep selection on same item
+  useEffect(() => {
+    if (currentTrack?.id) {
+      const newIdx = tracks.findIndex(t => t.id === currentTrack.id);
+      if (newIdx !== -1 && newIdx !== currentTrackIndex) {
+        setCurrentTrackIndex(newIdx);
+      }
+    }
+  }, [tracks, currentTrack?.id, currentTrackIndex]);
+
+  const handleReorderEnd = async () => {
+    // Persistence
     try {
-      for (const track of updatedTracks) {
+      // Need tracks from latest state - using functional state update is tricky for side effects
+      // but we can just use the tracks from the current render cycle
+      for (const track of tracks) {
         await saveTrackToDB(track);
       }
     } catch (error) {
@@ -1107,7 +1116,7 @@ const App: React.FC = () => {
       <header className="flex items-center justify-between p-4 bg-white/80 dark:bg-slate-950/80 backdrop-blur-lg border-b border-slate-100 dark:border-slate-800 shrink-0 z-[100] relative">
         <div className="flex items-center gap-1 md:gap-3">
           {!isRecording && (
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-[#4da8ab] active:scale-95 transition-transform lg:hidden">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-[#4da8ab] active:scale-95 transition-transform">
               <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
             </button>
           )}
@@ -1177,6 +1186,7 @@ const App: React.FC = () => {
         {!isRecording && (
           <Sidebar 
             onImport={addTrack} onRemove={removeTrack} onMove={handleMoveTrack}
+            onReorderEnd={handleReorderEnd}
             onToggleSourceType={handleToggleSourceType}
             defaultView={defaultView}
             setDefaultView={setDefaultViewSetting}
@@ -1189,7 +1199,7 @@ const App: React.FC = () => {
           />
         )}
         
-        <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
+        <main className={`flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center transition-all duration-300 ${isSidebarOpen ? 'pr-[85%] sm:pr-[400px] lg:pr-[400px]' : ''}`}>
           <div className="px-4 py-8 md:px-8 md:py-12 lg:px-16 lg:py-16 max-w-6xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
@@ -1250,7 +1260,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className="fixed bottom-0 left-0 right-0 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)]">
+      <footer className={`fixed bottom-0 left-0 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] transition-all duration-300 ${isSidebarOpen ? 'right-[85%] sm:right-[400px]' : 'right-0'}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (
@@ -1286,8 +1296,6 @@ const App: React.FC = () => {
         setBackupStatusMessage={setBackupStatusMessage}
         onBackupSuccess={recordSuccessfulBackup}
         tracks={tracks}
-        resumePlaybackEnabled={resumePlaybackEnabled}
-        setResumePlaybackEnabled={setResumePlaybackEnabled}
       />
 
       {cropperData && (

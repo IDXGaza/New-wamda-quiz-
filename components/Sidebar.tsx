@@ -19,6 +19,7 @@ interface SidebarProps {
   onImport: (file: File, durationOverride?: number) => void;
   onRemove: (id: string) => void;
   onMove: (fromIndex: number, toIndex: number) => void;
+  onReorderEnd?: () => void;
   onToggleSourceType: (id: string, explicitType?: 'record' | 'import') => void;
   defaultView: 'all' | 'record' | 'import';
   setDefaultView: (view: 'all' | 'record' | 'import') => void;
@@ -36,7 +37,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
-  onImport, onRemove, onMove, onToggleSourceType, defaultView, setDefaultView, tracks, currentId, onSelect, onPlayRandom, isOpen = false, onClose,
+  onImport, onRemove, onMove, onReorderEnd, onToggleSourceType, defaultView, setDefaultView, tracks, currentId, onSelect, onPlayRandom, isOpen = false, onClose,
   isRecording, onStartRecording, showBackupReminder, onOpenBackup
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -93,8 +94,10 @@ const Sidebar: React.FC<SidebarProps> = ({
       return matchesSearch && matchesType;
     })
     .sort((a, b) => {
+      // Prioritize favorites
       if (a.track.isFavorite && !b.track.isFavorite) return -1;
       if (!a.track.isFavorite && b.track.isFavorite) return 1;
+      // Then respect literal order
       return a.originalIndex - b.originalIndex;
     });
 
@@ -120,7 +123,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (isRecording) return;
     
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('.w-44') || target.closest('[role="button"]') || target.closest('.fixed')) {
+    const isHandle = target.closest('.reorder-handle');
+    if (!isHandle && (target.closest('button') || target.closest('.w-44') || target.closest('[role="button"]') || target.closest('.fixed'))) {
       return;
     }
     
@@ -164,6 +168,22 @@ const Sidebar: React.FC<SidebarProps> = ({
       }
 
       const touch = e.touches[0];
+
+      // Auto scroll touch logic
+      if (navRef.current) {
+        const { top, bottom } = navRef.current.getBoundingClientRect();
+        const threshold = 60;
+        const y = touch.clientY;
+
+        if (y < top + threshold) {
+          startAutoScroll('up');
+        } else if (y > bottom - threshold) {
+          startAutoScroll('down');
+        } else {
+          stopAutoScroll();
+        }
+      }
+
       const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
       if (!targetEl) return;
 
@@ -189,6 +209,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    stopAutoScroll();
     if (longPressTimeout.current) {
       clearTimeout(longPressTimeout.current);
       longPressTimeout.current = null;
@@ -203,6 +224,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     isLongPressed.current = false;
     setDraggedItemIndex(null);
     setActiveTouchDragIndex(null);
+    if (onReorderEnd) onReorderEnd();
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -234,6 +256,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const onDragEnd = () => {
     stopAutoScroll();
     setDraggedItemIndex(null);
+    if (onReorderEnd) onReorderEnd();
   };
 
   return (
@@ -269,12 +292,12 @@ const Sidebar: React.FC<SidebarProps> = ({
           damping: 25, 
           stiffness: 220,
         }}
-        className={`fixed lg:relative inset-y-0 right-0 w-[85%] sm:w-[400px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl lg:shadow-none z-[70] ${isOpen ? 'pointer-events-auto' : 'pointer-events-none lg:pointer-events-auto'}`}
+        className={`fixed inset-y-0 right-0 w-[85%] sm:w-[400px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl z-[70] ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
       >
         <div className="pt-6 px-6 pb-2 shrink-0 space-y-4">
           <div className="flex items-center justify-between pb-1">
             <h1 className="text-3xl font-black text-[#4da8ab] tracking-tight">ترانيم</h1>
-            <button onClick={onClose} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+            <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -409,7 +432,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       : 'border-transparent'
                   }`}
                 >
-                  <div className="relative">
+                  <div className="relative reorder-handle cursor-grab active:cursor-grabbing">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

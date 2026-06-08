@@ -22,8 +22,6 @@ interface GoogleDriveBackupModalProps {
   setBackupStatusMessage: (msg: string | null) => void;
   onBackupSuccess: () => void;
   tracks: Track[];
-  resumePlaybackEnabled: boolean;
-  setResumePlaybackEnabled: (val: boolean) => void;
 }
 
 export default function GoogleDriveBackupModal({
@@ -36,9 +34,7 @@ export default function GoogleDriveBackupModal({
   backupStatusMessage,
   setBackupStatusMessage,
   onBackupSuccess,
-  tracks,
-  resumePlaybackEnabled,
-  setResumePlaybackEnabled
+  tracks
 }: GoogleDriveBackupModalProps) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
@@ -390,19 +386,6 @@ export default function GoogleDriveBackupModal({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
           <StatsWidget tracks={tracks} />
-
-          <div className="bg-white/50 dark:bg-slate-900/50 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <div className="space-y-1">
-              <h4 className="text-xs font-black text-slate-800 dark:text-slate-100">استئناف التشغيل</h4>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">ابدأ الاستماع من حيث توقفت في المرة السابقة</p>
-            </div>
-            <button 
-              onClick={() => setResumePlaybackEnabled(!resumePlaybackEnabled)}
-              className={`w-12 h-6 rounded-full transition-all relative flex items-center px-1 shrink-0 ${resumePlaybackEnabled ? 'bg-[#4da8ab]' : 'bg-slate-200 dark:bg-slate-700'}`}
-            >
-              <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${resumePlaybackEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
-            </button>
-          </div>
 
           {backupStatusMessage && (
             <div className="p-3.5 text-xs text-center font-bold bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] rounded-2xl flex items-center justify-center gap-2 border border-[#4da8ab]/10 animate-pulse">
