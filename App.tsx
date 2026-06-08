@@ -1,4 +1,6 @@
 
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as fflate from 'fflate';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -129,14 +131,32 @@ const App: React.FC = () => {
   const lastStatsUpdateRef = useRef<number>(0);
 
   useEffect(() => {
-    // Request notification permission for web view context
-    if ('Notification' in window && Notification.permission === 'default') {
-      const requestPermission = () => {
-        Notification.requestPermission().catch(() => {});
-      };
-      window.addEventListener('click', requestPermission, { once: true });
-      window.addEventListener('touchstart', requestPermission, { once: true });
-    }
+    const requestPermissions = async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const status = await LocalNotifications.requestPermissions();
+          console.log('Native notification permission status:', status);
+        } else if ('Notification' in window && Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+      } catch (e) {
+        console.warn('Permission request failed', e);
+      }
+    };
+
+    const handleInteraction = () => {
+      requestPermissions();
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
+
+    window.addEventListener('click', handleInteraction);
+    window.addEventListener('touchstart', handleInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
   }, []);
 
   useEffect(() => {
@@ -496,7 +516,7 @@ const App: React.FC = () => {
     togglePause: toggleRecordingPause,
     cancelRecording
   } = useAudioRecorder((file, durationOverride) => {
-    addTrack(file, durationOverride);
+    addTrack(file, durationOverride, 'record');
   });
 
   const handleStartRecording = () => {
@@ -608,10 +628,25 @@ const App: React.FC = () => {
     });
   }, [tracks.length, handleSelectTrack]);
 
-  const handlePlayPause = () => {
+  const handlePlayPause = async () => {
     const audio = audioRef.current;
     if (!audio) return;
     initAudioCtx();
+    
+    // Explicitly request notification permissions on user interaction for native Android support
+    try {
+      if (Capacitor.getPlatform() !== 'web') {
+        const check = await LocalNotifications.checkPermissions();
+        if (check.display !== 'granted') {
+          await LocalNotifications.requestPermissions();
+        }
+      } else if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Silent permission request failed', e);
+    }
+
     if (playerState.isPlaying) {
       audio.pause();
       setPlayerState(prev => ({ ...prev, isPlaying: false }));
@@ -654,12 +689,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Request notification permission to improve visibility in some browsers
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
+  // Media Session logic
 
   const handleSkip = useCallback((seconds: number) => {
     const audio = audioRef.current;
@@ -972,13 +1002,13 @@ const App: React.FC = () => {
     saveTrackToDB(updatedTrack);
   };
 
-  const addTrack = async (file: File, durationOverride?: number) => {
+  const addTrack = async (file: File, durationOverride?: number, sourceType: 'record' | 'import' = 'import') => {
     const id = Math.random().toString(36).substr(2, 9);
     const newTrack: Track = {
       id, name: file.name.replace(/\.[^/.]+$/, ""), artist: "",
       url: URL.createObjectURL(file), coverUrl: UNIFORM_PLACEHOLDER,
       isFavorite: false, timestamps: [], duration: durationOverride || 0, playbackRate: 1,
-      order: tracks.length, listenTime: 0, playCount: 0, fileBlob: file, sourceType: 'record',
+      order: tracks.length, listenTime: 0, playCount: 0, fileBlob: file, sourceType: sourceType,
     };
     
     // Optimistic UI update
@@ -1230,7 +1260,7 @@ const App: React.FC = () => {
         )}
         
         <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
-          <div className="px-4 py-8 md:px-8 md:py-12 lg:px-16 lg:py-16 max-w-6xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
+          <div className="px-4 py-8 md:px-8 md:py-12 lg:px-16 lg:py-16 pb-40 md:pb-48 max-w-6xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
                 getAnalyser={getAnalyser}
@@ -1290,7 +1320,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className={`fixed bottom-0 left-0 right-0 z-[100] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] transition-all duration-300 max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'sm:pr-[400px]' : ''}`}>
+      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-300 z-[100] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'pr-[85%] sm:pr-[400px]' : ''}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (

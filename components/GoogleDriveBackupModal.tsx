@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { 
   getAccessToken,
@@ -386,6 +387,28 @@ export default function GoogleDriveBackupModal({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
           <StatsWidget tracks={tracks} />
+
+          <div className="bg-white/50 dark:bg-slate-900/50 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 flex flex-col space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <h4 className="text-xs font-black text-slate-800 dark:text-slate-100">أذونات الإشعارات</h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">مطلوب لتشغيل واجهة التحكم في الإشعارات</p>
+              </div>
+              <button 
+                onClick={async () => {
+                  try {
+                    await LocalNotifications.requestPermissions();
+                    alert('تم طلب الإذن، يرجى التأكد من تفعيله في إعدادات النظام إذا لم يظهر');
+                  } catch (e) {
+                    alert('حدث خطأ في طلب الإذن');
+                  }
+                }}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-black text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              >
+                طلب الإذن
+              </button>
+            </div>
+          </div>
 
           {backupStatusMessage && (
             <div className="p-3.5 text-xs text-center font-bold bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] rounded-2xl flex items-center justify-center gap-2 border border-[#4da8ab]/10 animate-pulse">
