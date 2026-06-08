@@ -415,7 +415,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <nav ref={navRef} className="flex-1 overflow-y-auto px-5 pb-40 space-y-4 pt-4 scroll-container">
+        <nav ref={navRef} className="flex-1 min-h-0 overflow-y-auto px-5 pb-12 space-y-4 pt-4 custom-scrollbar overscroll-contain">
           {notificationPermission !== 'granted' && (
             <motion.div 
               initial={{ opacity: 0, height: 0 }}
@@ -592,6 +592,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ))
             )}
+            <div className="h-24 shrink-0" />
           </div>
         </nav>
       </motion.aside>

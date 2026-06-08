@@ -47,3 +47,20 @@ html.dark {
   transform: scale(0.98);
   background-color: rgba(77, 168, 171, 0.1) !important;
 }
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(77, 168, 171, 0.2);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(77, 168, 171, 0.4);
+}
+.overscroll-contain {
+  overscroll-behavior-y: contain;
+}

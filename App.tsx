@@ -1,5 +1,10 @@
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const MediaSession = registerPlugin<{
+  updateMetadata: (opts: { title: string; artist: string; artworkUrl: string; isPlaying: boolean }) => Promise<void>;
+  updatePlaybackState: (opts: { isPlaying: boolean }) => Promise<void>;
+  hideNotification: () => Promise<void>;
+}>('MediaSession');
 import { LocalNotifications } from '@capacitor/local-notifications';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as fflate from 'fflate';
@@ -127,6 +132,7 @@ const App: React.FC = () => {
   const [isBackupProcessing, setIsBackupProcessing] = useState(false);
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
+  const [shuffleHistory, setShuffleHistory] = useState<number[]>([]);
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
   const lastStatsUpdateRef = useRef<number>(0);
 
@@ -579,6 +585,7 @@ const App: React.FC = () => {
     localStorage.setItem('lastPlayedTrackId', track.id);
     setCurrentTrackIndex(index);
     setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
+    updateMediaSession(true);
     
     // Attempt play immediately to capture user gesture
     if (audioRef.current) {
@@ -601,15 +608,27 @@ const App: React.FC = () => {
     }
   }, [tracks, initAudioCtx]);
 
-  const handlePlayRandomTrack = useCallback(() => {
-    setTracks(prev => {
-      if (prev.length > 0) {
-        const randomIndex = Math.floor(Math.random() * prev.length);
-        handleSelectTrack(randomIndex);
-      }
-      return prev;
-    });
-  }, [handleSelectTrack]);
+  const handleShuffle = useCallback(() => {
+    if (tracks.length < 2) return;
+    
+    // Exclude current track index and already played indices in this session
+    const availableIndices = tracks.map((_, i) => i)
+      .filter(i => i !== currentTrackIndex && !shuffleHistory.includes(i));
+    
+    let nextIndex: number;
+    
+    if (availableIndices.length === 0) {
+      // If all tracks played, reset history but still exclude current
+      const resetAvailable = tracks.map((_, i) => i).filter(i => i !== currentTrackIndex);
+      nextIndex = resetAvailable[Math.floor(Math.random() * resetAvailable.length)];
+      setShuffleHistory([nextIndex]);
+    } else {
+      nextIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+      setShuffleHistory(prev => [...prev, nextIndex]);
+    }
+    
+    handleSelectTrack(nextIndex);
+  }, [tracks, currentTrackIndex, handleSelectTrack, shuffleHistory]);
 
   const handleSkipToNext = useCallback(() => {
     setCurrentTrackIndex(prevIndex => {
@@ -644,8 +663,10 @@ const App: React.FC = () => {
     if (playerState.isPlaying) {
       audio.pause();
       setPlayerState(prev => ({ ...prev, isPlaying: false }));
+      updateMediaSession(false);
     } else {
       setPlayerState(prev => ({ ...prev, isPlaying: true }));
+      updateMediaSession(true);
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.catch(error => {
@@ -697,6 +718,7 @@ const App: React.FC = () => {
     if (audio) {
       audio.pause();
       setPlayerState(prev => ({ ...prev, isPlaying: false }));
+      updateMediaSession(false);
     }
   }, []);
 
@@ -705,6 +727,7 @@ const App: React.FC = () => {
     if (audio) {
       initAudioCtx();
       setPlayerState(prev => ({ ...prev, isPlaying: true }));
+      updateMediaSession(true);
       audio.play().catch(err => {
         console.error("Playback failed:", err);
         setPlayerState(prev => ({ ...prev, isPlaying: false }));
@@ -712,23 +735,44 @@ const App: React.FC = () => {
     }
   }, [initAudioCtx]);
 
+  const updateMediaSession = useCallback(async (isPlaying: boolean) => {
+    if (!Capacitor.isNativePlatform() || !currentTrack) return;
+    try {
+      const artworkUrl = (currentTrack.coverUrl && !currentTrack.coverUrl.startsWith('blob:'))
+        ? currentTrack.coverUrl
+        : '';
+      await MediaSession.updateMetadata({
+        title: currentTrack.name,
+        artist: currentTrack.artist || 'ترانيم',
+        artworkUrl,
+        isPlaying,
+      });
+    } catch (e) {
+      console.warn('MediaSession error:', e);
+    }
+  }, [currentTrack]);
+
   // Media Session logic
   useEffect(() => {
     if (!('mediaSession' in navigator) || !currentTrack) return;
 
     const setupMediaSession = () => {
       try {
+        const coverSrc = (currentTrack.coverUrl && !currentTrack.coverUrl.startsWith('blob:')) 
+          ? currentTrack.coverUrl 
+          : UNIFORM_PLACEHOLDER;
+
         const metadata: MediaMetadataInit = {
           title: currentTrack.name,
           artist: currentTrack.artist || 'ترانيم',
           album: 'ترانيم - مكتبتي',
           artwork: [
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
+            { src: coverSrc, sizes: '96x96', type: 'image/png' },
+            { src: coverSrc, sizes: '128x128', type: 'image/png' },
+            { src: coverSrc, sizes: '192x192', type: 'image/png' },
+            { src: coverSrc, sizes: '256x256', type: 'image/png' },
+            { src: coverSrc, sizes: '384x384', type: 'image/png' },
+            { src: coverSrc, sizes: '512x512', type: 'image/png' },
           ]
         };
 
@@ -762,7 +806,13 @@ const App: React.FC = () => {
     };
 
     setupMediaSession();
-  }, [currentTrack, playerState.isPlaying, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip, currentTrackIndex, tracks.length]);
+  }, [currentTrack?.id, currentTrack?.name, currentTrack?.coverUrl, playerState.isPlaying, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip, currentTrackIndex, tracks.length]);
+
+  useEffect(() => {
+    if (!currentTrack) {
+      if (Capacitor.isNativePlatform()) MediaSession.hideNotification().catch(() => {});
+    }
+  }, [currentTrack]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -1214,7 +1264,7 @@ const App: React.FC = () => {
               defaultView={defaultView}
               setDefaultView={setDefaultViewSetting}
               tracks={tracks} currentId={currentTrack?.id || null} onSelect={handleSelectTrack}
-              onPlayRandom={handlePlayRandomTrack}
+              onPlayRandom={handleShuffle}
               isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
               isRecording={isRecording} onStartRecording={handleStartRecording}
               showBackupReminder={showBackupReminder}
@@ -1285,7 +1335,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-500 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'opacity-0 invisible sm:opacity-100 sm:visible sm:pr-[400px]' : 'opacity-100 visible'}`}>
+      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-500 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'opacity-0 invisible lg:opacity-100 lg:visible lg:pr-[400px]' : 'opacity-100 visible'}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (

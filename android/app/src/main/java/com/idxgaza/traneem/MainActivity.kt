@@ -7,6 +7,7 @@ import com.getcapacitor.BridgeActivity
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(GoogleAuth::class.java)
+        registerPlugin(MediaSessionPlugin::class.java)
         super.onCreate(savedInstanceState)
     }
 }
