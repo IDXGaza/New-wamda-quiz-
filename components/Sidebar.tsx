@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { 
   Plus, 
   Mic, 
@@ -50,9 +51,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [notificationPermission, setNotificationPermission] = useState<string>('default');
 
   useEffect(() => {
-    const checkPermissions = () => {
-      if ('Notification' in window) {
-        setNotificationPermission(Notification.permission);
+    const checkPermissions = async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const status = await LocalNotifications.checkPermissions();
+          setNotificationPermission(status.display);
+        } else if ('Notification' in window) {
+          setNotificationPermission(Notification.permission);
+        }
+      } catch (e) {
+        console.warn('Check permission error', e);
       }
     };
     checkPermissions();
@@ -60,7 +68,10 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const requestPermission = async () => {
     try {
-      if ('Notification' in window) {
+      if (Capacitor.isNativePlatform()) {
+        const status = await LocalNotifications.requestPermissions();
+        setNotificationPermission(status.display);
+      } else if ('Notification' in window) {
         const status = await Notification.requestPermission();
         setNotificationPermission(status);
       }
@@ -316,7 +327,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           damping: 25, 
           stiffness: 220,
         }}
-        className={`${className || 'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl z-[70]'} bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        className={`${className || 'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl z-[120]'} bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
       >
         <div className="pt-6 px-6 pb-2 shrink-0 space-y-4">
           <div className="flex items-center justify-between pb-1">

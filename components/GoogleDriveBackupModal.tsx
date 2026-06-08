@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { 
   getAccessToken,
   uploadBackupToDrive, 
@@ -396,7 +397,14 @@ export default function GoogleDriveBackupModal({
               <button 
                 onClick={async () => {
                   try {
-                    if ('Notification' in window) {
+                    if (Capacitor.isNativePlatform()) {
+                      const status = await LocalNotifications.requestPermissions();
+                      if (status.display === 'granted') {
+                        alert('تم تفعيل الإشعارات بنجاح');
+                      } else {
+                        alert('تم رفض الإذن أو لم يتم تغييره');
+                      }
+                    } else if ('Notification' in window) {
                       const status = await Notification.requestPermission();
                       if (status === 'granted') {
                         alert('تم تفعيل الإشعارات بنجاح');

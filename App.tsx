@@ -1,5 +1,6 @@
 
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as fflate from 'fflate';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -628,7 +629,12 @@ const App: React.FC = () => {
     
     // Explicitly request notification permissions on user interaction for native Android support
     try {
-      if ('Notification' in window && Notification.permission === 'default') {
+      if (Capacitor.isNativePlatform()) {
+        const check = await LocalNotifications.checkPermissions();
+        if (check.display !== 'granted') {
+          await LocalNotifications.requestPermissions();
+        }
+      } else if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().catch(() => {});
       }
     } catch (e) {
@@ -1308,7 +1314,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-300 z-[100] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'pr-[85vw] sm:pr-[400px]' : ''}`}>
+      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-300 z-[90] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'opacity-0 sm:opacity-100 sm:pr-[400px]' : ''}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (
