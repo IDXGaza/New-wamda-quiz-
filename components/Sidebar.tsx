@@ -71,6 +71,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       if (Capacitor.isNativePlatform()) {
         const status = await LocalNotifications.requestPermissions();
         setNotificationPermission(status.display);
+        if (status.display === 'denied') {
+          alert('تم رفض الإذن. يرجى تفعيله من إعدادات النظام لتتمكن من تلقي التنبيهات وإظهار أزرار التحكم.');
+        } else if (status.display === 'granted') {
+          alert('تم تفعيل الإشعارات بنجاح.');
+        }
       } else if ('Notification' in window) {
         const status = await Notification.requestPermission();
         setNotificationPermission(status);
@@ -327,7 +332,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           damping: 25, 
           stiffness: 220,
         }}
-        className={`${className || 'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl z-[120]'} bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        className={`${className || 'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-[0_0_50px_rgba(0,0,0,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.6)] z-[200]'} bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <div className="pt-6 px-6 pb-2 shrink-0 space-y-4">
           <div className="flex items-center justify-between pb-1">

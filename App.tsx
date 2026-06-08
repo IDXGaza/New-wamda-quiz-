@@ -683,8 +683,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Media Session logic
-
   const handleSkip = useCallback((seconds: number) => {
     const audio = audioRef.current;
     if (audio) {
@@ -699,9 +697,6 @@ const App: React.FC = () => {
     if (audio) {
       audio.pause();
       setPlayerState(prev => ({ ...prev, isPlaying: false }));
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'paused';
-      }
     }
   }, []);
 
@@ -710,85 +705,64 @@ const App: React.FC = () => {
     if (audio) {
       initAudioCtx();
       setPlayerState(prev => ({ ...prev, isPlaying: true }));
-      audio.play().then(() => {
-        if ('mediaSession' in navigator) {
-          navigator.mediaSession.playbackState = 'playing';
-        }
-      }).catch(err => {
+      audio.play().catch(err => {
         console.error("Playback failed:", err);
         setPlayerState(prev => ({ ...prev, isPlaying: false }));
       });
     }
   }, [initAudioCtx]);
 
+  // Media Session logic
   useEffect(() => {
-    if ('mediaSession' in navigator && currentTrack) {
+    if (!('mediaSession' in navigator) || !currentTrack) return;
+
+    const setupMediaSession = () => {
       try {
-        navigator.mediaSession.metadata = new MediaMetadata({
+        const metadata: MediaMetadataInit = {
           title: currentTrack.name,
           artist: currentTrack.artist || 'ترانيم',
           album: 'ترانيم - مكتبتي',
           artwork: [
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/jpeg' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
           ]
-        });
-      } catch (e) {
-        console.warn("MediaMetadata failed", e);
-      }
+        };
 
-      navigator.mediaSession.playbackState = playerState.isPlaying ? 'playing' : 'paused';
+        navigator.mediaSession.metadata = new MediaMetadata(metadata);
+        navigator.mediaSession.playbackState = playerState.isPlaying ? 'playing' : 'paused';
 
-      // Update position state for better UI sync
-      if ('setPositionState' in navigator.mediaSession && currentTrack) {
-        try {
-          const audio = audioRef.current;
-          if (audio && !isNaN(audio.duration) && isFinite(audio.duration)) {
-            navigator.mediaSession.setPositionState({
-              duration: audio.duration,
-              playbackRate: audio.playbackRate,
-              position: audio.currentTime
-            });
-          }
-        } catch (e) { /* ignore */ }
-      }
+        const handlers: [MediaSessionAction, MediaSessionActionHandler | null][] = [
+          ['play', handlePlay],
+          ['pause', handlePause],
+          ['previoustrack', () => {
+            if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
+            else if (currentTrackIndex === 0 && tracks.length > 0) handleSelectTrack(tracks.length - 1);
+          }],
+          ['nexttrack', handleSkipToNext],
+          ['seekto', (details) => { if (details.seekTime !== undefined) handleSeek(details.seekTime); }],
+          ['seekbackward', (details) => handleSkip(-(details.seekOffset || 10))],
+          ['seekforward', (details) => handleSkip(details.seekOffset || 10)],
+          ['stop', handlePause]
+        ];
 
-      const handlers: [MediaSessionAction, ((details: any) => void) | null][] = [
-        ['play', handlePlay],
-        ['pause', handlePause],
-        ['previoustrack', () => {
-          if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
-          else if (currentTrackIndex === 0 && tracks.length > 0) handleSelectTrack(tracks.length - 1);
-        }],
-        ['nexttrack', handleSkipToNext],
-        ['seekto', (details) => { if (details.seekTime !== undefined) handleSeek(details.seekTime); }],
-        ['seekbackward', (details) => handleSkip(-(details.seekOffset || 10))],
-        ['seekforward', (details) => handleSkip(details.seekOffset || 10)],
-        ['stop', handlePause]
-      ];
-
-      // Use modern toggletrackfavorite if available
-      try {
-        (navigator.mediaSession as any).setActionHandler('toggletrackfavorite', () => {
-          handleToggleFavorite();
-        });
-      } catch (e) { /* ignore */ }
-
-      for (const [action, handler] of handlers) {
-        try {
-          if (handler) {
+        for (const [action, handler] of handlers) {
+          try {
             navigator.mediaSession.setActionHandler(action, handler);
+          } catch (e) {
+            // Action not supported in this environment
           }
-        } catch (e) {
-          // Action not supported
         }
+      } catch (e) {
+        console.warn("MediaSession setup failed", e);
       }
-    }
-  }, [currentTrack, currentTrackIndex, tracks.length, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip, playerState.isPlaying]);
+    };
+
+    setupMediaSession();
+  }, [currentTrack, playerState.isPlaying, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip, currentTrackIndex, tracks.length]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -813,6 +787,17 @@ const App: React.FC = () => {
       if (!audioRef.current || (now - lastUpdateTimeRef.current < 150)) return;
       lastUpdateTimeRef.current = now;
       setPlayerState(prev => ({ ...prev, currentTime: audio.currentTime }));
+
+      // Sync position state to MediaSession periodically
+      if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && !isNaN(audio.duration)) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: audio.duration,
+            playbackRate: audio.playbackRate,
+            position: audio.currentTime
+          });
+        } catch (e) { /* ignore */ }
+      }
     };
     const onEnded = () => playerState.isLooping ? (audio.currentTime = 0, audio.play().catch(() => {})) : handleSkipToNext();
     const onWaiting = () => setPlayerState(prev => ({ ...prev, isLoading: true }));
@@ -823,20 +808,6 @@ const App: React.FC = () => {
         navigator.mediaSession.playbackState = 'playing';
       }
       updateMediaSessionPosition();
-
-      // Show a real notification if permitted
-      if ('Notification' in window && Notification.permission === 'granted' && currentTrack) {
-        try {
-          new Notification('جارٍ التشغيل الآن', {
-            body: currentTrack.name,
-            icon: currentTrack.coverUrl || UNIFORM_PLACEHOLDER,
-            silent: true,
-            tag: 'traneem-player'
-          });
-        } catch (e) {
-          // Some browsers don't support silent or tag
-        }
-      }
     };
     
     const onPause = () => {
@@ -1314,7 +1285,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-300 z-[90] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'opacity-0 sm:opacity-100 sm:pr-[400px]' : ''}`}>
+      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-500 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'opacity-0 invisible sm:opacity-100 sm:visible sm:pr-[400px]' : 'opacity-100 visible'}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (

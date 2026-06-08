@@ -401,8 +401,10 @@ export default function GoogleDriveBackupModal({
                       const status = await LocalNotifications.requestPermissions();
                       if (status.display === 'granted') {
                         alert('تم تفعيل الإشعارات بنجاح');
+                      } else if (status.display === 'denied') {
+                        alert('تم رفض الإذن. يرجى تفعيله من إعدادات النظام.');
                       } else {
-                        alert('تم رفض الإذن أو لم يتم تغييره');
+                        alert('لم يتم تغيير حالة الإذن');
                       }
                     } else if ('Notification' in window) {
                       const status = await Notification.requestPermission();
