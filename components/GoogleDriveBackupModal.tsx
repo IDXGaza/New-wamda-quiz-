@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { 
   getAccessToken,
@@ -397,8 +396,16 @@ export default function GoogleDriveBackupModal({
               <button 
                 onClick={async () => {
                   try {
-                    await LocalNotifications.requestPermissions();
-                    alert('تم طلب الإذن، يرجى التأكد من تفعيله في إعدادات النظام إذا لم يظهر');
+                    if ('Notification' in window) {
+                      const status = await Notification.requestPermission();
+                      if (status === 'granted') {
+                        alert('تم تفعيل الإشعارات بنجاح');
+                      } else {
+                        alert('تم رفض الإذن أو لم يتم تغييره');
+                      }
+                    } else {
+                      alert('متصفحك لا يدعم الإشعارات');
+                    }
                   } catch (e) {
                     alert('حدث خطأ في طلب الإذن');
                   }

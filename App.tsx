@@ -1,5 +1,4 @@
 
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as fflate from 'fflate';
@@ -131,21 +130,15 @@ const App: React.FC = () => {
   const lastStatsUpdateRef = useRef<number>(0);
 
   useEffect(() => {
-    const requestPermissions = async () => {
+    // Trigger on first interaction to avoid automated block
+    const handleInteraction = async () => {
       try {
-        if (Capacitor.isNativePlatform()) {
-          const status = await LocalNotifications.requestPermissions();
-          console.log('Native notification permission status:', status);
-        } else if ('Notification' in window && Notification.permission === 'default') {
+        if ('Notification' in window && Notification.permission === 'default') {
           await Notification.requestPermission();
         }
       } catch (e) {
         console.warn('Permission request failed', e);
       }
-    };
-
-    const handleInteraction = () => {
-      requestPermissions();
       window.removeEventListener('click', handleInteraction);
       window.removeEventListener('touchstart', handleInteraction);
     };
@@ -635,12 +628,7 @@ const App: React.FC = () => {
     
     // Explicitly request notification permissions on user interaction for native Android support
     try {
-      if (Capacitor.getPlatform() !== 'web') {
-        const check = await LocalNotifications.checkPermissions();
-        if (check.display !== 'granted') {
-          await LocalNotifications.requestPermissions();
-        }
-      } else if ('Notification' in window && Notification.permission === 'default') {
+      if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().catch(() => {});
       }
     } catch (e) {
@@ -1320,7 +1308,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-300 z-[100] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'pr-[85%] sm:pr-[400px]' : ''}`}>
+      <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-300 z-[100] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'pr-[85vw] sm:pr-[400px]' : ''}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { 
   Plus, 
@@ -51,16 +50,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [notificationPermission, setNotificationPermission] = useState<string>('default');
 
   useEffect(() => {
-    const checkPermissions = async () => {
-      try {
-        if (Capacitor.getPlatform() !== 'web') {
-          const status = await LocalNotifications.checkPermissions();
-          setNotificationPermission(status.display);
-        } else if ('Notification' in window) {
-          setNotificationPermission(Notification.permission);
-        }
-      } catch (e) {
-        console.warn('Check permission error', e);
+    const checkPermissions = () => {
+      if ('Notification' in window) {
+        setNotificationPermission(Notification.permission);
       }
     };
     checkPermissions();
@@ -68,10 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const requestPermission = async () => {
     try {
-      if (Capacitor.getPlatform() !== 'web') {
-        const status = await LocalNotifications.requestPermissions();
-        setNotificationPermission(status.display);
-      } else if ('Notification' in window) {
+      if ('Notification' in window) {
         const status = await Notification.requestPermission();
         setNotificationPermission(status);
       }
