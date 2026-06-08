@@ -29,6 +29,7 @@ interface SidebarProps {
   onPlayRandom: () => void;
   isOpen?: boolean;
   onClose?: () => void;
+  className?: string;
   // new recording props
   isRecording?: boolean;
   onStartRecording?: () => void;
@@ -38,7 +39,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ 
   onImport, onRemove, onMove, onReorderEnd, onToggleSourceType, defaultView, setDefaultView, tracks, currentId, onSelect, onPlayRandom, isOpen = false, onClose,
-  isRecording, onStartRecording, showBackupReminder, onOpenBackup
+  isRecording, onStartRecording, showBackupReminder, onOpenBackup, className
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'all' | 'record' | 'import'>(defaultView);
@@ -98,7 +99,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       if (a.track.isFavorite && !b.track.isFavorite) return -1;
       if (!a.track.isFavorite && b.track.isFavorite) return 1;
       // Then respect literal order
-      return a.originalIndex - b.originalIndex;
+      return (a.track.order ?? 0) - (b.track.order ?? 0);
     });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -292,7 +293,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           damping: 25, 
           stiffness: 220,
         }}
-        className={`fixed inset-y-0 right-0 w-[85%] sm:w-[400px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col shadow-2xl z-[70] ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        className={`${className || 'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-2xl z-[70]'} bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
       >
         <div className="pt-6 px-6 pb-2 shrink-0 space-y-4">
           <div className="flex items-center justify-between pb-1">

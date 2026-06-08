@@ -1,6 +1,5 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import * as fflate from 'fflate';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, addDoc, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -130,27 +129,14 @@ const App: React.FC = () => {
   const lastStatsUpdateRef = useRef<number>(0);
 
   useEffect(() => {
-    // Request native notification permission for Capacitor
-    const requestPermissions = async () => {
-      try {
-        const { display } = await LocalNotifications.checkPermissions();
-        if (display !== 'granted') {
-          await LocalNotifications.requestPermissions();
-        }
-      } catch (e) {
-        console.warn('Native notification permission request failed', e);
-        
-        // Fallback to web request if native fails or not in native context
-        if ('Notification' in window && Notification.permission === 'default') {
-          const requestPermission = () => {
-            Notification.requestPermission().catch(() => {});
-          };
-          window.addEventListener('click', requestPermission, { once: true });
-          window.addEventListener('touchstart', requestPermission, { once: true });
-        }
-      }
-    };
-    requestPermissions();
+    // Request notification permission for web view context
+    if ('Notification' in window && Notification.permission === 'default') {
+      const requestPermission = () => {
+        Notification.requestPermission().catch(() => {});
+      };
+      window.addEventListener('click', requestPermission, { once: true });
+      window.addEventListener('touchstart', requestPermission, { once: true });
+    }
   }, []);
 
   useEffect(() => {
@@ -1225,22 +1211,25 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex overflow-hidden relative">
         {!isRecording && (
-          <Sidebar 
-            onImport={addTrack} onRemove={removeTrack} onMove={handleMoveTrack}
-            onReorderEnd={handleReorderEnd}
-            onToggleSourceType={handleToggleSourceType}
-            defaultView={defaultView}
-            setDefaultView={setDefaultViewSetting}
-            tracks={tracks} currentId={currentTrack?.id || null} onSelect={handleSelectTrack}
-            onPlayRandom={handlePlayRandomTrack}
-            isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
-            isRecording={isRecording} onStartRecording={handleStartRecording}
-            showBackupReminder={showBackupReminder}
-            onOpenBackup={() => setIsDriveModalOpen(true)}
-          />
+          <div className={`transition-all duration-300 relative z-[60] h-full shrink-0 overflow-hidden ${isSidebarOpen ? 'w-[85%] sm:w-[400px] border-l border-slate-200 dark:border-slate-800' : 'w-0'}`}>
+            <Sidebar 
+              onImport={addTrack} onRemove={removeTrack} onMove={handleMoveTrack}
+              onReorderEnd={handleReorderEnd}
+              onToggleSourceType={handleToggleSourceType}
+              defaultView={defaultView}
+              setDefaultView={setDefaultViewSetting}
+              tracks={tracks} currentId={currentTrack?.id || null} onSelect={handleSelectTrack}
+              onPlayRandom={handlePlayRandomTrack}
+              isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
+              isRecording={isRecording} onStartRecording={handleStartRecording}
+              showBackupReminder={showBackupReminder}
+              onOpenBackup={() => setIsDriveModalOpen(true)}
+              className="!relative !w-full !translate-x-0 !shadow-none !z-10"
+            />
+          </div>
         )}
         
-        <main className={`flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center transition-all duration-300 ${isSidebarOpen ? 'pr-[85%] sm:pr-[400px] lg:pr-[400px]' : ''}`}>
+        <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
           <div className="px-4 py-8 md:px-8 md:py-12 lg:px-16 lg:py-16 max-w-6xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
             {isRecording ? (
               <RecordingScreen 
@@ -1301,7 +1290,7 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      <footer className={`fixed bottom-0 left-0 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] transition-all duration-300 ${isSidebarOpen ? 'right-[85%] sm:right-[400px]' : 'right-0'}`}>
+      <footer className={`fixed bottom-0 left-0 right-0 z-[100] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] transition-all duration-300 max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'sm:pr-[400px]' : ''}`}>
         <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (
