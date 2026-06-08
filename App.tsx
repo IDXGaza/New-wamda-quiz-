@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import * as fflate from 'fflate';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, addDoc, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
@@ -127,6 +128,30 @@ const App: React.FC = () => {
   const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
   const lastStatsUpdateRef = useRef<number>(0);
+
+  useEffect(() => {
+    // Request native notification permission for Capacitor
+    const requestPermissions = async () => {
+      try {
+        const { display } = await LocalNotifications.checkPermissions();
+        if (display !== 'granted') {
+          await LocalNotifications.requestPermissions();
+        }
+      } catch (e) {
+        console.warn('Native notification permission request failed', e);
+        
+        // Fallback to web request if native fails or not in native context
+        if ('Notification' in window && Notification.permission === 'default') {
+          const requestPermission = () => {
+            Notification.requestPermission().catch(() => {});
+          };
+          window.addEventListener('click', requestPermission, { once: true });
+          window.addEventListener('touchstart', requestPermission, { once: true });
+        }
+      }
+    };
+    requestPermissions();
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -692,18 +717,34 @@ const App: React.FC = () => {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: currentTrack.name,
           artist: currentTrack.artist || 'ترانيم',
-          album: 'تراييم - مكتبتي',
+          album: 'ترانيم - مكتبتي',
           artwork: [
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
-            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/jpeg' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/jpeg' },
           ]
         });
       } catch (e) {
         console.warn("MediaMetadata failed", e);
+      }
+
+      navigator.mediaSession.playbackState = playerState.isPlaying ? 'playing' : 'paused';
+
+      // Update position state for better UI sync
+      if ('setPositionState' in navigator.mediaSession && currentTrack) {
+        try {
+          const audio = audioRef.current;
+          if (audio && !isNaN(audio.duration) && isFinite(audio.duration)) {
+            navigator.mediaSession.setPositionState({
+              duration: audio.duration,
+              playbackRate: audio.playbackRate,
+              position: audio.currentTime
+            });
+          }
+        } catch (e) { /* ignore */ }
       }
 
       const handlers: [MediaSessionAction, ((details: any) => void) | null][] = [
@@ -737,7 +778,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [currentTrack, currentTrackIndex, tracks.length, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip]);
+  }, [currentTrack, currentTrackIndex, tracks.length, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip, playerState.isPlaying]);
 
   useEffect(() => {
     const audio = audioRef.current;
