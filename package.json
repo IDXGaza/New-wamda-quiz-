@@ -18,10 +18,14 @@
     "@google/genai": "^1.40.0",
     "audiobuffer-to-wav": "^1.0.0",
     "capacitor-voice-recorder": "^5.0.0",
+    "fflate": "^0.8.3",
     "firebase": "^12.12.1",
+    "framer-motion": "^12.40.0",
     "jszip": "^3.10.1",
+    "lucide-react": "^1.17.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-easy-crop": "^5.5.7"
   },
   "devDependencies": {
     "@capacitor/cli": "^6.0.0",

@@ -1,6 +1,6 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import JSZip from 'jszip';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import * as fflate from 'fflate';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, addDoc, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
@@ -11,6 +11,7 @@ import TimestampManager from './components/TimestampManager';
 import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import GoogleDriveBackupModal from './components/GoogleDriveBackupModal';
+import ImageCropperModal from './components/ImageCropperModal';
 
 // Removed cloud functions syncTrackToCloud and syncDeleteTrackToCloud
 
@@ -119,6 +120,7 @@ const App: React.FC = () => {
   const [isBackupProcessing, setIsBackupProcessing] = useState(false);
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
+  const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
 
   // Backup Reminder Logic
   useEffect(() => {
@@ -154,42 +156,48 @@ const App: React.FC = () => {
     setBackupStatusMessage('جاري تحضير الملفات...');
     try {
       const allTracks = await getAllTracksFromDB();
-      const zip = new JSZip();
+      const files: any = {};
       
-      const audioFolder = zip.folder("audio");
-      const coversFolder = zip.folder("covers");
-      
-      const metadata = await Promise.all(allTracks.map(async (t) => {
+      const metadataPromises = allTracks.map(async (t) => {
         const trackMetadata = { ...t };
-        
-        // Handle files
+        const trackTasks: Promise<void>[] = [];
+
         if (t.fileBlob) {
-          audioFolder?.file(`${t.id}.blob`, t.fileBlob);
+          trackTasks.push((async () => {
+             const buf = await t.fileBlob.arrayBuffer();
+             files[`audio/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
+          })());
           trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
         }
         if (t.coverBlob) {
-          coversFolder?.file(`${t.id}.blob`, t.coverBlob);
+          trackTasks.push((async () => {
+             const buf = await t.coverBlob.arrayBuffer();
+             files[`covers/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
+          })());
           trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
         }
+
+        if (trackTasks.length > 0) await Promise.all(trackTasks);
         
-        // Cleanup transient data
         delete trackMetadata.fileBlob;
         delete trackMetadata.coverBlob;
-        delete trackMetadata.url; // url changes
-        delete trackMetadata.coverUrl; // coverUrl changes
-        
+        delete trackMetadata.url;
+        delete trackMetadata.coverUrl;
         return trackMetadata;
-      }));
-      
-      setBackupStatusMessage('جاري ضغط الملفات (ZIP)...');
-      zip.file("metadata.json", JSON.stringify(metadata));
-      const blob = await zip.generateAsync({
-        type: "blob",
-        compression: "STORE"
       });
-      return blob;
+
+      const metadata = await Promise.all(metadataPromises);
+      files["metadata.json"] = [fflate.strToU8(JSON.stringify(metadata)), { level: 0 }];
+      
+      setBackupStatusMessage('جاري إنشاء الملف (سريع جداً)...');
+      return new Promise((resolve, reject) => {
+        fflate.zip(files, (err, data) => {
+          if (err) reject(err);
+          else resolve(new Blob([data], { type: "application/zip" }));
+        });
+      });
     } finally {
-      // Don't set false here if the calling function (modal) still needs to upload/share
+      // Done
     }
   };
 
@@ -197,37 +205,35 @@ const App: React.FC = () => {
     setIsBackupProcessing(true);
     setBackupStatusMessage('جاري فك واستعادة البيانات...');
     try {
-      const zip = await JSZip.loadAsync(blob);
-      const metadataFile = zip.file("metadata.json");
-      if (!metadataFile) throw new Error("الملف غير صالح (مفقود metadata.json)");
+      const buffer = await blob.arrayBuffer();
+      const data = new Uint8Array(buffer);
       
-      const metadata = JSON.parse(await metadataFile.async("string"));
+      const decompressed = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
+        fflate.unzip(data, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+      
+      const metadataU8 = decompressed["metadata.json"];
+      if (!metadataU8) throw new Error("الملف غير صالح (مفقود metadata.json)");
+      
+      const metadata = JSON.parse(fflate.strFromU8(metadataU8));
       
       for (const t of metadata) {
         const trackToSave = { ...t };
-        
-        // Restore blobs
-        if (t.fileBlobPath) {
-          const audioFile = zip.file(t.fileBlobPath);
-          if (audioFile) {
-            trackToSave.fileBlob = await audioFile.async("blob");
-          }
+        if (t.fileBlobPath && decompressed[t.fileBlobPath]) {
+          trackToSave.fileBlob = new Blob([decompressed[t.fileBlobPath]] as any);
           delete trackToSave.fileBlobPath;
         }
-        
-        if (t.coverBlobPath) {
-          const coverFile = zip.file(t.coverBlobPath);
-          if (coverFile) {
-            trackToSave.coverBlob = await coverFile.async("blob");
-          }
+        if (t.coverBlobPath && decompressed[t.coverBlobPath]) {
+          trackToSave.coverBlob = new Blob([decompressed[t.coverBlobPath]] as any);
           delete trackToSave.coverBlobPath;
         }
         trackToSave.sourceType = 'import';
-        
         await saveTrackToDB(trackToSave);
       }
       
-      // Reload UI
       const local = await getAllTracksFromDB();
       const withUrls = local.map(t => ({
         ...t,
@@ -236,6 +242,10 @@ const App: React.FC = () => {
       }));
       setTracks(withUrls.sort((a, b) => a.order - b.order));
       recordSuccessfulBackup();
+      alert("تم استعادة النسخة الاحتياطية بنجاح");
+    } catch (error) {
+      console.error("Restore error:", error);
+      alert("فشل استعادة البيانات. تأكد من أن الملف صحيح.");
     } finally {
       setIsBackupProcessing(false);
       setBackupStatusMessage(null);
@@ -328,69 +338,22 @@ const App: React.FC = () => {
   const handleExportZip = async () => {
     try {
       console.log("Starting ZIP export...");
-      alert("بدء التصدير...");
-      const allTracks = await getAllTracksFromDB();
-      console.log("Tracks fetched:", allTracks.length);
-      alert(`تم جلب ${allTracks.length} نشيد للتصدير`);
+      const zipBlob = await createBackupZipBlob();
       
-      const zip = new JSZip();
-      
-      const audioFolder = zip.folder("audio");
-      const coversFolder = zip.folder("covers");
-      
-      const metadata = await Promise.all(allTracks.map(async (t) => {
-        const trackMetadata = { ...t };
-        
-        // Handle files
-        if (t.fileBlob) {
-          audioFolder?.file(`${t.id}.blob`, t.fileBlob);
-          trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
-        }
-        if (t.coverBlob) {
-          coversFolder?.file(`${t.id}.blob`, t.coverBlob);
-          trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
-        }
-        
-        // Cleanup transient data
-        delete trackMetadata.fileBlob;
-        delete trackMetadata.coverBlob;
-        delete trackMetadata.url; // url changes
-        delete trackMetadata.coverUrl; // coverUrl changes
-        
-        return trackMetadata;
-      }));
-      
-      zip.file("metadata.json", JSON.stringify(metadata));
-      const zipBlob = await zip.generateAsync({type: "blob"});
-      console.log("Zip generated size:", zipBlob.size);
-      alert("تم إنشاء ملف ZIP");
-      
-      recordSuccessfulBackup();
-
       const exportName = `traneem_backup_${new Date().toISOString().split('T')[0]}.zip`;
-      
-      // Try sharing natively first if on mobile, otherwise download
       const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      
       const file = new File([zipBlob], exportName, { type: "application/zip" });
       
       if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
-          console.log("Attempting native share...");
-           alert("محاولة المشاركة...");
           await navigator.share({
             files: [file],
             title: "النسخة الاحتياطية",
           });
-          console.log("Share successful");
         } catch (shareErr) {
-          console.error("Native share failed, falling back to download:", shareErr);
-          alert("فشلت المشاركة، محاولة التحميل...");
           triggerDownload(zipBlob, exportName);
         }
       } else {
-        console.log("Using download fallback...");
-        alert("استخدام التحميل المباشر...");
         triggerDownload(zipBlob, exportName);
       }
       setIsDropdownOpen(false);
@@ -401,84 +364,30 @@ const App: React.FC = () => {
   };
 
   const triggerDownload = (blob: Blob, filename: string) => {
-    console.log("Triggering download, blob size:", blob.size);
     try {
       const url = URL.createObjectURL(blob);
       const linkElement = document.createElement('a');
       linkElement.href = url;
       linkElement.download = filename;
-      linkElement.style.display = 'none'; // Ensure it's hidden
+      linkElement.style.display = 'none';
       document.body.appendChild(linkElement);
       linkElement.click();
       document.body.removeChild(linkElement);
       setTimeout(() => URL.revokeObjectURL(url), 100);
-      alert("بدأ التحميل: " + filename);
     } catch (e) {
       console.error("Download failed", e);
       alert("فشل التحميل: " + (e instanceof Error ? e.message : String(e)));
-      // Fallback: Try window.open if link approach fails in WebView
-      try {
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-      } catch (e2) {
-        alert("فشل التحميل تماماً، لا يمكن فتح الملف في المتصفح هذا.");
-      }
     }
   };
-
-// Removed cloud functions
 
   const handleImportZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    try {
-      const zip = await JSZip.loadAsync(file);
-      const metadataFile = zip.file("metadata.json");
-      if (!metadataFile) throw new Error("الملف غير صالح (مفقود metadata.json)");
-      
-      const metadata = JSON.parse(await metadataFile.async("string"));
-      
-      for (const t of metadata) {
-        const trackToSave = { ...t };
-        
-        // Restore blobs
-        if (t.fileBlobPath) {
-          const audioFile = zip.file(t.fileBlobPath);
-          if (audioFile) {
-            trackToSave.fileBlob = await audioFile.async("blob");
-          }
-          delete trackToSave.fileBlobPath;
-        }
-        
-        if (t.coverBlobPath) {
-          const coverFile = zip.file(t.coverBlobPath);
-          if (coverFile) {
-            trackToSave.coverBlob = await coverFile.async("blob");
-          }
-          delete trackToSave.coverBlobPath;
-        }
-        trackToSave.sourceType = 'import';
-        
-        await saveTrackToDB(trackToSave);
-      }
-      
-      // Reload UI
-      const local = await getAllTracksFromDB();
-      const withUrls = local.map(t => ({
-        ...t,
-        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
-        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
-      }));
-      setTracks(withUrls.sort((a, b) => a.order - b.order));
-      alert("تم استيراد النسخة الاحتياطية بنجاح");
-      setIsDropdownOpen(false);
-    } catch (err) {
-      console.error("Import zip failed", err);
-      alert("فشل استيراد الملف. ربما الملف تالف.");
-    }
+    await handleRestoreFromZipBlob(file);
+    setIsDropdownOpen(false);
     e.target.value = '';
   };
+
   const [playerState, setPlayerState] = useState<PlayerState>({
     isPlaying: false,
     currentTime: 0,
@@ -517,7 +426,7 @@ const App: React.FC = () => {
     startRecording();
   };
 
-  const initAudioCtx = () => {
+  const initAudioCtx = useCallback(() => {
     if (audioCtxRef.current || !audioRef.current) {
       if (audioCtxRef.current?.state === 'suspended') {
         audioCtxRef.current.resume();
@@ -536,7 +445,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("AudioContext initialization failed:", e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const loadLocalData = async () => {
@@ -563,26 +472,36 @@ const App: React.FC = () => {
     loadLocalData();
   }, []);
 
-  const handleSelectTrack = (index: number) => {
-    const track = tracks[index];
-    if (track) localStorage.setItem('lastPlayedTrackId', track.id);
+  const handleSelectTrack = useCallback((index: number) => {
+    setTracks(prev => {
+       const track = prev[index];
+       if (track) localStorage.setItem('lastPlayedTrackId', track.id);
+       return prev;
+    });
     setCurrentTrackIndex(index);
     setPlayerState(prev => ({ ...prev, isPlaying: true, currentTime: 0 }));
-  };
+  }, []);
 
-  const handlePlayRandomTrack = () => {
-    if (tracks.length > 0) {
-      const randomIndex = Math.floor(Math.random() * tracks.length);
-      handleSelectTrack(randomIndex);
-    }
-  };
+  const handlePlayRandomTrack = useCallback(() => {
+    setTracks(prev => {
+      if (prev.length > 0) {
+        const randomIndex = Math.floor(Math.random() * prev.length);
+        handleSelectTrack(randomIndex);
+      }
+      return prev;
+    });
+  }, [handleSelectTrack]);
 
-  const handleSkipToNext = () => {
-    if (currentTrackIndex !== null && tracks.length > 0) {
-      const nextIndex = (currentTrackIndex + 1) % tracks.length;
-      handleSelectTrack(nextIndex);
-    }
-  };
+  const handleSkipToNext = useCallback(() => {
+    setCurrentTrackIndex(prevIndex => {
+      if (prevIndex !== null && tracks.length > 0) {
+        const nextIndex = (prevIndex + 1) % tracks.length;
+        handleSelectTrack(nextIndex);
+        return nextIndex;
+      }
+      return prevIndex;
+    });
+  }, [tracks.length, handleSelectTrack]);
 
   const handlePlayPause = () => {
     const audio = audioRef.current;
@@ -605,15 +524,15 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSeek = (time: number) => {
+  const handleSeek = useCallback((time: number) => {
     const audio = audioRef.current;
     if (audio) {
       audio.currentTime = time;
       setPlayerState(prev => ({ ...prev, currentTime: time }));
     }
-  };
+  }, []);
 
-  const handleTimestampSeek = (time: number) => {
+  const handleTimestampSeek = useCallback((time: number) => {
     const audio = audioRef.current;
     if (audio) {
       audio.currentTime = time;
@@ -628,7 +547,7 @@ const App: React.FC = () => {
         });
       }
     }
-  };
+  }, []);
 
   // Request notification permission to improve visibility in some browsers
   useEffect(() => {
@@ -637,16 +556,16 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleSkip = (seconds: number) => {
+  const handleSkip = useCallback((seconds: number) => {
     const audio = audioRef.current;
     if (audio) {
       const newTime = Math.max(0, Math.min(audio.currentTime + seconds, audio.duration || 0));
       audio.currentTime = newTime;
       setPlayerState(prev => ({ ...prev, currentTime: newTime }));
     }
-  };
+  }, []);
 
-  const handlePause = () => {
+  const handlePause = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -655,9 +574,9 @@ const App: React.FC = () => {
         navigator.mediaSession.playbackState = 'paused';
       }
     }
-  };
+  }, []);
 
-  const handlePlay = () => {
+  const handlePlay = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
       initAudioCtx();
@@ -671,45 +590,54 @@ const App: React.FC = () => {
         setPlayerState(prev => ({ ...prev, isPlaying: false }));
       });
     }
-  };
+  }, [initAudioCtx]);
 
   useEffect(() => {
     if ('mediaSession' in navigator && currentTrack) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.name,
-        artist: currentTrack.artist || 'ترانيم',
-        album: 'مكتبتي',
-        artwork: [
-          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
-          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
-          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
-          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
-          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
-          { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
-        ]
-      });
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: currentTrack.name,
+          artist: currentTrack.artist || 'ترانيم',
+          album: 'مكتبتي',
+          artwork: [
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '96x96', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '128x128', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '192x192', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '256x256', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '384x384', type: 'image/png' },
+            { src: currentTrack.coverUrl || UNIFORM_PLACEHOLDER, sizes: '512x512', type: 'image/png' },
+          ]
+        });
+      } catch (e) {
+        console.warn("MediaMetadata failed", e);
+      }
 
       navigator.mediaSession.setActionHandler('play', handlePlay);
       navigator.mediaSession.setActionHandler('pause', handlePause);
       navigator.mediaSession.setActionHandler('previoustrack', () => {
         if (currentTrackIndex !== null && currentTrackIndex > 0) handleSelectTrack(currentTrackIndex - 1);
-        else if (currentTrackIndex === 0) handleSelectTrack(tracks.length - 1);
+        else if (currentTrackIndex === 0 && tracks.length > 0) handleSelectTrack(tracks.length - 1);
       });
       navigator.mediaSession.setActionHandler('nexttrack', handleSkipToNext);
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime !== undefined) {
-          handleSeek(details.seekTime);
-        }
-      });
-      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        handleSkip(-(details.seekOffset || 10));
-      });
-      navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        handleSkip(details.seekOffset || 10);
-      });
-      navigator.mediaSession.setActionHandler('stop', () => {
-        handlePause();
-      });
+      
+      try {
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+          if (details.seekTime !== undefined) {
+            handleSeek(details.seekTime);
+          }
+        });
+        navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+          handleSkip(-(details.seekOffset || 10));
+        });
+        navigator.mediaSession.setActionHandler('seekforward', (details) => {
+          handleSkip(details.seekOffset || 10);
+        });
+      } catch (e) {}
+
+      try {
+        navigator.mediaSession.setActionHandler('stop', handlePause);
+      } catch (e) {}
+
       try {
         (navigator.mediaSession as any).setActionHandler('togglepause', () => {
           if (audioRef.current?.paused) handlePlay();
@@ -717,7 +645,7 @@ const App: React.FC = () => {
         });
       } catch (e) {}
     }
-  }, [currentTrack, currentTrackIndex, tracks.length]);
+  }, [currentTrack, currentTrackIndex, tracks.length, handlePlay, handlePause, handleSelectTrack, handleSkipToNext, handleSeek, handleSkip]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -875,14 +803,34 @@ const App: React.FC = () => {
   const handleUpdateCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && currentTrack) {
+      const imageUrl = URL.createObjectURL(file);
+      setCropperData({ image: imageUrl, file });
+      // Reset input value to allow selecting same file again
+      e.target.value = '';
+    }
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    if (!currentTrack || !cropperData) return;
+    
+    try {
+      const extension = croppedBlob.type.split('/')[1] || 'jpg';
+      const fileName = cropperData.file.name.replace(/\.[^/.]+$/, "") + `_cropped.${extension}`;
+      const croppedFile = new File([croppedBlob], fileName, { type: croppedBlob.type });
+
       const updatedTrack: Track = { 
         ...currentTrack, 
-        coverUrl: URL.createObjectURL(file), 
-        coverBlob: file,
+        coverUrl: URL.createObjectURL(croppedFile), 
+        coverBlob: croppedFile,
         sourceType: 'import'
       };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
       saveTrackToDB(updatedTrack);
+    } catch (error) {
+      console.error("Error saving cropped image:", error);
+      alert("حدث خطأ أثناء حفظ الصورة");
+    } finally {
+      setCropperData(null);
     }
   };
 
@@ -963,68 +911,65 @@ const App: React.FC = () => {
     }
   };
 
-  const handleShareTrack = async () => {
+  const handleShareTrack = () => {
     if (!currentTrack) return;
     
-    try {
-      let fileToShare: File | null = null;
-      
-      // محاولة الحصول على الملف من الذاكرة المحلية أولاً
-      if (currentTrack.fileBlob) {
-        if (currentTrack.fileBlob instanceof File) {
-          fileToShare = currentTrack.fileBlob;
+    // Prepare data synchronously to maintain user gesture context
+    let fileToShare: File | null = null;
+    if (currentTrack.fileBlob) {
+      try {
+        let fileName = 'audio.mp3';
+        if (currentTrack.fileBlob instanceof File && currentTrack.fileBlob.name) {
+          fileName = currentTrack.fileBlob.name;
         } else {
-          // محاولة استنتاج النوع من الـ Blob أو الافتراض أنه mp3 إذا لم يتوفر
           const mimeType = currentTrack.fileBlob.type || 'audio/mpeg';
-          const extension = mimeType.split('/')[1] || 'mp3';
-          fileToShare = new File([currentTrack.fileBlob], `${currentTrack.name}.${extension}`, { type: mimeType });
+          const extension = mimeType.includes('mpeg') ? 'mp3' : (mimeType.split('/')[1]?.split(';')[0] || 'mp3');
+          fileName = `${currentTrack.name.replace(/[\\/:*?"<>|]/g, '_')}.${extension}`;
         }
-      } else if (currentTrack.audioUrl) {
-        // إذا لم يتوفر محلياً، نحاول تحميله من الرابط السحابي للمشاركة
-        const response = await fetch(currentTrack.audioUrl);
-        const blob = await response.blob();
-        const mimeType = blob.type || 'audio/mpeg';
-        const extension = mimeType.split('/')[1] || 'mp3';
-        fileToShare = new File([blob], `${currentTrack.name}.${extension}`, { type: mimeType });
+        fileToShare = new File([currentTrack.fileBlob], fileName, { type: currentTrack.fileBlob.type || 'audio/mpeg' });
+      } catch (e) {
+        console.warn("Could not create File for sharing:", e);
       }
+    }
 
-      const shareData: any = {
-        title: currentTrack.name,
-        text: `أنشودة: ${currentTrack.name}${currentTrack.artist ? ` - ${currentTrack.artist}` : ''}`,
-      };
+    const shareTitle = currentTrack.name;
+    const shareText = `أنشودة: ${currentTrack.name}${currentTrack.artist ? ` - ${currentTrack.artist}` : ''}`;
+    const shareUrl = (currentTrack.audioUrl && !currentTrack.audioUrl.startsWith('blob:')) 
+      ? currentTrack.audioUrl 
+      : window.location.origin;
 
-      // التحقق مما إذا كان المتصفح يدعم مشاركة الملفات
-      if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
-        shareData.files = [fileToShare];
-      } else {
-        // إذا لم يدعم مشاركة الملفات، نعود لمشاركة الرابط
-        shareData.url = currentTrack.audioUrl || window.location.origin;
-      }
-
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
-        if (shareData.url) {
-          await navigator.clipboard.writeText(shareData.url);
-          alert('تم نسخ رابط المقطع (المشاركة المباشرة للملفات غير مدعومة في هذا المتصفح)');
-        } else {
-          alert('المشاركة غير مدعومة في هذا المتصفح');
-        }
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return; // تجاهل الخطأ إذا قام المستخدم بإلغاء المشاركة
-      console.error('Error sharing track:', err);
-      // في حالة حدوث خطأ (مثل قيود CORS عند تحميل الملف من السحاب)، نكتفي بمشاركة الرابط
-      if (currentTrack.audioUrl) {
-        try {
-          await navigator.share({
-            title: currentTrack.name,
-            url: currentTrack.audioUrl
-          });
-        } catch (sErr: any) {
-          if (sErr.name === 'AbortError') return;
-          console.error('Fallback share failed:', sErr);
-        }
+    // Direct synchronous-as-possible call
+    if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
+      navigator.share({
+        files: [fileToShare],
+        title: shareTitle,
+        text: shareText,
+      }).catch(err => {
+        if (err.name === 'AbortError') return;
+        console.warn('File share failed, falling back to text:', err);
+        // Fallback to basic share if file share fails
+        navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl
+        }).catch(e => console.error("Fallback share also failed:", e));
+      });
+    } else if (navigator.share) {
+      navigator.share({
+        title: shareTitle,
+        text: shareText,
+        url: shareUrl
+      }).catch(err => {
+        if (err.name === 'AbortError') return;
+        console.error('Text share failed:', err);
+      });
+    } else {
+      // Manual clipboard fallback
+      try {
+        navigator.clipboard.writeText(`${shareTitle} - ${shareUrl}`);
+        alert('تم نسخ رابط الأنشودة');
+      } catch (e) {
+        alert('المشاركة غير مدعومة في هذا المتصفح');
       }
     }
   };
@@ -1084,12 +1029,32 @@ const App: React.FC = () => {
                 <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
                   <button 
                     onClick={() => { setIsDriveModalOpen(true); setIsDropdownOpen(false); }} 
-                    className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-2"
+                    className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-3"
                   >
-                    <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                    <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
                     </svg>
-                    النسخ الاحتياطي والاستعادة 🔄
+                    <div className="flex-1 flex flex-col items-start text-right">
+                      <span className="text-[13px] font-black">النسخ الاحتياطي والاستعادة</span>
+                      <div className="flex items-center gap-1.5 mt-0.5 opacity-60 text-[9px] font-bold">
+                        <span>آخر نسخة: {
+                          (() => {
+                            const lastTime = parseInt(localStorage.getItem('lastBackupTime') || '0');
+                            if (lastTime === 0) return 'أبداً';
+                            const diff = Date.now() - lastTime;
+                            const mins = Math.floor(diff / 60000);
+                            const hours = Math.floor(mins / 60);
+                            const days = Math.floor(hours / 24);
+                            if (days > 0) return `منذ ${days} يوم`;
+                            if (hours > 0) return `منذ ${hours} ساعة`;
+                            if (mins > 0) return `منذ ${mins} دقيقة`;
+                            return 'الآن';
+                          })()
+                        }</span>
+                        <span className="w-1 h-1 rounded-full bg-slate-300" />
+                        <span>{Math.max(0, tracks.length - parseInt(localStorage.getItem('tracksCountAtLastBackup') || '0'))} أناشيد جديدة</span>
+                      </div>
+                    </div>
                   </button>
                   
                   <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
@@ -1106,7 +1071,7 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-        <div className={`transition-all duration-300 ${isRecording ? 'w-0 opacity-0 overflow-hidden hidden pointer-events-none' : 'w-auto opacity-100'}`}>
+        {!isRecording && (
           <Sidebar 
             onImport={addTrack} onRemove={removeTrack} onMove={handleMoveTrack}
             onToggleSourceType={handleToggleSourceType}
@@ -1119,7 +1084,7 @@ const App: React.FC = () => {
             showBackupReminder={showBackupReminder}
             onOpenBackup={() => setIsDriveModalOpen(true)}
           />
-        </div>
+        )}
         
         <main className="flex-1 overflow-y-auto scroll-container bg-transparent relative z-10 flex flex-col items-center">
           <div className="px-4 py-8 md:p-12 max-w-4xl mx-auto w-full flex-1 flex flex-col items-center justify-start min-h-[500px] bg-white dark:bg-slate-950 transition-colors duration-300">
@@ -1218,6 +1183,14 @@ const App: React.FC = () => {
         setBackupStatusMessage={setBackupStatusMessage}
         onBackupSuccess={recordSuccessfulBackup}
       />
+
+      {cropperData && (
+        <ImageCropperModal
+          image={cropperData.image}
+          onClose={() => setCropperData(null)}
+          onCropComplete={handleCropComplete}
+        />
+      )}
     </div>
   );
 };

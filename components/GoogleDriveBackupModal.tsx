@@ -393,7 +393,7 @@ export default function GoogleDriveBackupModal({
             </div>
           )}
 
-          {/* Section 1: Local Offline Backup & Restore (The perfect APK solution) */}
+          {/* Section 1: Local Offline Backup & Restore */}
           <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-2xl border border-dashed border-[#4da8ab]/30 dark:border-[#4da8ab]/20 space-y-4">
             <div className="flex items-start gap-3">
               <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-600 dark:text-emerald-400">
@@ -402,7 +402,7 @@ export default function GoogleDriveBackupModal({
                 </svg>
               </div>
               <div className="space-y-1 text-right">
-                <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">1. النسخ الاحتياطي المحلي والتصدير (يعمل مع الـ APK 🚀)</h4>
+                <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">1. النسخ الاحتياطي المحلي والتصدير</h4>
               </div>
             </div>
 
@@ -631,9 +631,7 @@ export default function GoogleDriveBackupModal({
           </div>
         </div>
 
-        <div className="px-6 py-4.5 bg-slate-50 dark:bg-slate-950/10 border-t border-slate-100 dark:border-slate-800/80 text-[10px] text-slate-400 text-center">
-          الوصول مشفّر ومحمي تماماً. نوصيك باستخدام النسخ الاحتياطي المحلي لتفادي أي أخطاء متعلقة بالتوقيع الإلكتروني للـ APK.
-        </div>
+        <div className="h-4" />
       </div>
     </div>
   );
