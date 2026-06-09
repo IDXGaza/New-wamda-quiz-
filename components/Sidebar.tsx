@@ -47,6 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'all' | 'record' | 'import'>(defaultView);
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<string>('default');
 
@@ -267,8 +268,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (onReorderEnd) onReorderEnd();
   };
 
-  const onDragOver = (e: React.DragEvent) => {
+  const onDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
+    if (draggedItemIndex !== null && draggedItemIndex !== index) {
+      setDragOverIndex(index);
+    }
     if (!navRef.current) return;
 
     const { top, bottom } = navRef.current.getBoundingClientRect();
@@ -291,11 +295,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       onMove(draggedItemIndex, index);
     }
     setDraggedItemIndex(null);
+    setDragOverIndex(null);
   };
 
   const onDragEnd = () => {
     stopAutoScroll();
     setDraggedItemIndex(null);
+    setDragOverIndex(null);
     if (onReorderEnd) onReorderEnd();
   };
 
@@ -332,7 +338,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           damping: 25, 
           stiffness: 220,
         }}
-        className={`${className || 'fixed inset-y-0 right-0 w-[85%] sm:w-[400px] shadow-[0_0_50px_rgba(0,0,0,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.6)] z-[200]'} bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`${className || 'fixed inset-y-0 right-0 h-full w-[85%] sm:w-[400px] shadow-[0_0_50px_rgba(0,0,0,0.3)] dark:shadow-[0_0_60px_rgba(0,0,0,0.6)] z-[200]'} h-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 flex flex-col ${isOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <div className="pt-6 px-6 pb-2 shrink-0 space-y-4">
           <div className="flex items-center justify-between pb-1">
@@ -415,7 +421,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        <nav ref={navRef} className="flex-1 min-h-0 overflow-y-auto px-5 pb-12 space-y-4 pt-4 custom-scrollbar overscroll-contain">
+        <nav ref={navRef} className="flex-1 min-h-0 overflow-y-auto px-5 pb-36 space-y-4 pt-4 custom-scrollbar overscroll-contain">
           {notificationPermission !== 'granted' && (
             <motion.div 
               initial={{ opacity: 0, height: 0 }}
@@ -479,23 +485,30 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             ) : (
               filteredTracksWithIndices.map((item) => (
-                <div 
-                  key={item.track.id} 
-                  draggable
-                  data-index={item.originalIndex}
-                  onDragStart={(e) => onDragStart(e, item.originalIndex)}
-                  onDragOver={onDragOver}
-                  onDrop={(e) => onDrop(e, item.originalIndex)}
-                  onDragEnd={onDragEnd}
-                  onTouchStart={(e) => handleTouchStart(e, item.originalIndex)}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
-                  className={`group flex items-center gap-2 transition-all select-none rounded-3xl p-1 border ${
-                    draggedItemIndex === item.originalIndex || activeTouchDragIndex === item.originalIndex
-                      ? 'opacity-40 scale-[0.98] bg-[#4da8ab]/10 border-dashed border-[#4da8ab]' 
-                      : 'border-transparent'
-                  }`}
-                >
+                <React.Fragment key={item.track.id}>
+                  {dragOverIndex === item.originalIndex && draggedItemIndex !== null && draggedItemIndex > item.originalIndex && (
+                    <motion.div 
+                      initial={{ opacity: 0, scaleY: 0 }}
+                      animate={{ opacity: 1, scaleY: 1 }}
+                      className="h-1 bg-blue-500 dark:bg-blue-400 rounded-full my-1 select-none pointer-events-none shadow-[0_0_8px_rgba(59,130,246,0.5)] origin-top" 
+                    />
+                  )}
+                  <div 
+                    draggable
+                    data-index={item.originalIndex}
+                    onDragStart={(e) => onDragStart(e, item.originalIndex)}
+                    onDragOver={(e) => onDragOver(e, item.originalIndex)}
+                    onDrop={(e) => onDrop(e, item.originalIndex)}
+                    onDragEnd={onDragEnd}
+                    onTouchStart={(e) => handleTouchStart(e, item.originalIndex)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    className={`group flex items-center gap-2 transition-all select-none rounded-3xl p-1 border ${
+                      draggedItemIndex === item.originalIndex || activeTouchDragIndex === item.originalIndex
+                        ? 'opacity-40 scale-[0.98] bg-[#4da8ab]/10 border-dashed border-[#4da8ab]' 
+                        : 'border-transparent'
+                    }`}
+                  >
                   <div className="relative reorder-handle cursor-grab active:cursor-grabbing">
                     <button
                       onClick={(e) => {
@@ -590,8 +603,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-              ))
-            )}
+                {dragOverIndex === item.originalIndex && draggedItemIndex !== null && draggedItemIndex < item.originalIndex && (
+                  <motion.div 
+                    initial={{ opacity: 0, scaleY: 0 }}
+                    animate={{ opacity: 1, scaleY: 1 }}
+                    className="h-1 bg-blue-500 dark:bg-blue-400 rounded-full my-1 select-none pointer-events-none shadow-[0_0_8px_rgba(59,130,246,0.5)] origin-bottom" 
+                  />
+                )}
+              </React.Fragment>
+            ))
+          )}
             <div className="h-24 shrink-0" />
           </div>
         </nav>

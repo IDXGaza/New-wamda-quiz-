@@ -24,12 +24,71 @@ import java.net.URL
 @CapacitorPlugin(name = "MediaSession")
 class MediaSessionPlugin : Plugin() {
 
+    companion object {
+        var activeSession: MediaSessionCompat? = null
+        var activePlugin: MediaSessionPlugin? = null
+    }
+
     private var mediaSession: MediaSessionCompat? = null
     private val CHANNEL_ID = "traneem_media"
     private val NOTIFICATION_ID = 1
 
+    private val receiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action ?: return
+            when (action) {
+                "com.idxgaza.traneem.MEDIA_PREVIOUS" -> {
+                    notifyListeners("mediaAction", JSObject().apply { put("action", "previous") })
+                }
+                "com.idxgaza.traneem.MEDIA_PLAY_PAUSE" -> {
+                    notifyListeners("mediaAction", JSObject().apply { put("action", "toggle") })
+                }
+                "com.idxgaza.traneem.MEDIA_NEXT" -> {
+                    notifyListeners("mediaAction", JSObject().apply { put("action", "next") })
+                }
+                "com.idxgaza.traneem.MEDIA_BUTTON" -> {
+                    val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (keyEvent != null && keyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                        when (keyEvent.keyCode) {
+                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                                notifyListeners("mediaAction", JSObject().apply { put("action", "play") })
+                            }
+                            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                notifyListeners("mediaAction", JSObject().apply { put("action", "pause") })
+                            }
+                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            android.view.KeyEvent.KEYCODE_HEADSETHOOK -> {
+                                notifyListeners("mediaAction", JSObject().apply { put("action", "toggle") })
+                            }
+                            android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                notifyListeners("mediaAction", JSObject().apply { put("action", "next") })
+                            }
+                            android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                notifyListeners("mediaAction", JSObject().apply { put("action", "previous") })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun load() {
         createNotificationChannel()
+        
+        val mediaButtonIntent = Intent("com.idxgaza.traneem.MEDIA_BUTTON").apply {
+            setPackage(context.packageName)
+        }
+        val mediaButtonPendingIntent = PendingIntent.getBroadcast(
+            context, 99, mediaButtonIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         mediaSession = MediaSessionCompat(context, "TraneemMediaSession").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
@@ -48,7 +107,27 @@ class MediaSessionPlugin : Plugin() {
                     notifyListeners("mediaAction", JSObject().apply { put("action", "stop") })
                 }
             })
+            setFlags(
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
+            setMediaButtonReceiver(mediaButtonPendingIntent)
             isActive = true
+        }
+        activeSession = mediaSession
+        activePlugin = this
+        updatePlaybackState(false)
+
+        val filter = android.content.IntentFilter().apply {
+            addAction("com.idxgaza.traneem.MEDIA_PREVIOUS")
+            addAction("com.idxgaza.traneem.MEDIA_PLAY_PAUSE")
+            addAction("com.idxgaza.traneem.MEDIA_NEXT")
+            addAction("com.idxgaza.traneem.MEDIA_BUTTON")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
         }
     }
 
@@ -129,6 +208,7 @@ class MediaSessionPlugin : Plugin() {
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
                 PlaybackStateCompat.ACTION_PAUSE or
+                PlaybackStateCompat.ACTION_PLAY_PAUSE or
                 PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                 PlaybackStateCompat.ACTION_STOP
@@ -149,17 +229,17 @@ class MediaSessionPlugin : Plugin() {
 
         val prevIntent = PendingIntent.getBroadcast(
             context, 0,
-            Intent("com.idxgaza.traneem.MEDIA_PREVIOUS"),
+            Intent("com.idxgaza.traneem.MEDIA_PREVIOUS").apply { setPackage(context.packageName) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val playPauseIntent = PendingIntent.getBroadcast(
             context, 1,
-            Intent("com.idxgaza.traneem.MEDIA_PLAY_PAUSE"),
+            Intent("com.idxgaza.traneem.MEDIA_PLAY_PAUSE").apply { setPackage(context.packageName) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val nextIntent = PendingIntent.getBroadcast(
             context, 2,
-            Intent("com.idxgaza.traneem.MEDIA_NEXT"),
+            Intent("com.idxgaza.traneem.MEDIA_NEXT").apply { setPackage(context.packageName) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -197,6 +277,13 @@ class MediaSessionPlugin : Plugin() {
     }
 
     override fun handleOnDestroy() {
+        if (activePlugin == this) activePlugin = null
+        if (activeSession == mediaSession) activeSession = null
+        try {
+            context.unregisterReceiver(receiver)
+        } catch (e: Exception) {
+            // Ignore if not registered
+        }
         mediaSession?.release()
         mediaSession = null
     }

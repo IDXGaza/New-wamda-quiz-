@@ -450,6 +450,22 @@ const App: React.FC = () => {
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastUpdateTimeRef = useRef<number>(0);
+  const tracksRef = useRef<Track[]>([]);
+  const currentTrackIndexRef = useRef<number | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    tracksRef.current = tracks;
+  }, [tracks]);
+
+  useEffect(() => {
+    currentTrackIndexRef.current = currentTrackIndex;
+  }, [currentTrackIndex]);
+
+  useEffect(() => {
+    isPlayingRef.current = playerState.isPlaying;
+  }, [playerState.isPlaying]);
+
   const currentTrack = currentTrackIndex !== null ? tracks[currentTrackIndex] : null;
 
   useEffect(() => {
@@ -736,21 +752,26 @@ const App: React.FC = () => {
   }, [initAudioCtx]);
 
   const updateMediaSession = useCallback(async (isPlaying: boolean) => {
-    if (!Capacitor.isNativePlatform() || !currentTrack) return;
+    if (!Capacitor.isNativePlatform()) return;
+    const currentIdx = currentTrackIndexRef.current;
+    const currentTracks = tracksRef.current;
+    if (currentIdx === null) return;
+    const track = currentTracks[currentIdx];
+    if (!track) return;
     try {
-      const artworkUrl = (currentTrack.coverUrl && !currentTrack.coverUrl.startsWith('blob:'))
-        ? currentTrack.coverUrl
+      const artworkUrl = (track.coverUrl && !track.coverUrl.startsWith('blob:'))
+        ? track.coverUrl
         : '';
       await MediaSession.updateMetadata({
-        title: currentTrack.name,
-        artist: currentTrack.artist || 'ترانيم',
+        title: track.name,
+        artist: track.artist || 'ترانيم',
         artworkUrl,
         isPlaying,
       });
     } catch (e) {
       console.warn('MediaSession error:', e);
     }
-  }, [currentTrack]);
+  }, []);
 
   // Media Session logic
   useEffect(() => {
@@ -813,6 +834,53 @@ const App: React.FC = () => {
       if (Capacitor.isNativePlatform()) MediaSession.hideNotification().catch(() => {});
     }
   }, [currentTrack]);
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      let active = true;
+      let listener: any = null;
+      try {
+        listener = (MediaSession as any).addListener('mediaAction', (data: { action: string }) => {
+          if (!active) return;
+          console.log('Got MediaSession Action:', data.action);
+          
+          if (data.action === 'play') {
+            handlePlay();
+          } else if (data.action === 'pause') {
+            handlePause();
+          } else if (data.action === 'toggle') {
+            if (isPlayingRef.current) {
+              handlePause();
+            } else {
+              handlePlay();
+            }
+          } else if (data.action === 'next') {
+            handleSkipToNext();
+          } else if (data.action === 'previous') {
+            const currentIdx = currentTrackIndexRef.current;
+            const currentTracks = tracksRef.current;
+            if (currentIdx !== null) {
+              if (currentIdx > 0) {
+                handleSelectTrack(currentIdx - 1);
+              } else if (currentIdx === 0 && currentTracks.length > 0) {
+                handleSelectTrack(currentTracks.length - 1);
+              }
+            }
+          } else if (data.action === 'stop') {
+            handlePause();
+          }
+        });
+      } catch (err) {
+        console.error('Error adding MediaSession listener:', err);
+      }
+      return () => {
+        active = false;
+        if (listener && typeof listener.remove === 'function') {
+          listener.remove();
+        }
+      };
+    }
+  }, [handlePlay, handlePause, handleSkipToNext, handleSelectTrack]);
 
   useEffect(() => {
     const audio = audioRef.current;
