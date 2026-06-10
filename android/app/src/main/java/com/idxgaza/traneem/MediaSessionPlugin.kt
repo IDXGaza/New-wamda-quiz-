@@ -54,14 +54,6 @@ class MediaSessionPlugin : Plugin() {
     override fun load() {
         createNotificationChannel()
         
-        val mediaButtonIntent = Intent("com.idxgaza.traneem.MEDIA_BUTTON").apply {
-            setPackage(context.packageName)
-        }
-        val mediaButtonPendingIntent = PendingIntent.getBroadcast(
-            context, 99, mediaButtonIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         mediaSession = MediaSessionCompat(context, "TraneemMediaSession").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
@@ -84,7 +76,6 @@ class MediaSessionPlugin : Plugin() {
                 MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
                 MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
             )
-            setMediaButtonReceiver(mediaButtonPendingIntent)
             isActive = true
         }
         activeSession = mediaSession
