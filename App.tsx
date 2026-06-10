@@ -849,7 +849,9 @@ const App: React.FC = () => {
           } else if (data.action === 'pause') {
             handlePause();
           } else if (data.action === 'toggle') {
-            if (isPlayingRef.current) {
+            const audio = audioRef.current;
+            const actuallyPlaying = audio && !audio.paused && !audio.ended && audio.readyState > 2;
+            if (actuallyPlaying) {
               handlePause();
             } else {
               handlePlay();
