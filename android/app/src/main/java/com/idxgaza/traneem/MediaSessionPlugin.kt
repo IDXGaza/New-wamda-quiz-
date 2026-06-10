@@ -47,33 +47,6 @@ class MediaSessionPlugin : Plugin() {
                 "com.idxgaza.traneem.MEDIA_NEXT" -> {
                     notifyListeners("mediaAction", JSObject().apply { put("action", "next") })
                 }
-                "com.idxgaza.traneem.MEDIA_BUTTON" -> {
-                    val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
-                    }
-                    if (keyEvent != null && keyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
-                        when (keyEvent.keyCode) {
-                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                                notifyListeners("mediaAction", JSObject().apply { put("action", "play") })
-                            }
-                            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
-                                notifyListeners("mediaAction", JSObject().apply { put("action", "pause") })
-                            }
-                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                                notifyListeners("mediaAction", JSObject().apply { put("action", "toggle") })
-                            }
-                            android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                                notifyListeners("mediaAction", JSObject().apply { put("action", "next") })
-                            }
-                            android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                                notifyListeners("mediaAction", JSObject().apply { put("action", "previous") })
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -122,7 +95,6 @@ class MediaSessionPlugin : Plugin() {
             addAction("com.idxgaza.traneem.MEDIA_PREVIOUS")
             addAction("com.idxgaza.traneem.MEDIA_PLAY_PAUSE")
             addAction("com.idxgaza.traneem.MEDIA_NEXT")
-            addAction("com.idxgaza.traneem.MEDIA_BUTTON")
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
@@ -183,12 +155,47 @@ class MediaSessionPlugin : Plugin() {
                                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
                                     .build()
                             )
+                            .setWillPauseWhenDucked(true)
+                            .setAcceptsDelayedFocusGain(true)
+                            .setOnAudioFocusChangeListener { focusChange ->
+                                when (focusChange) {
+                                    android.media.AudioManager.AUDIOFOCUS_LOSS,
+                                    android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                                        activity.runOnUiThread {
+                                            notifyListeners("mediaAction", JSObject().apply { put("action", "pause") })
+                                        }
+                                    }
+                                    android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                                        activity.runOnUiThread {
+                                            notifyListeners("mediaAction", JSObject().apply { put("action", "play") })
+                                        }
+                                    }
+                                }
+                            }
                             .build()
                         audioFocusRequest = focusRequest
                         audioManager.requestAudioFocus(focusRequest)
                     } else {
                         @Suppress("DEPRECATION")
-                        audioManager.requestAudioFocus(null, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN)
+                        audioManager.requestAudioFocus(
+                            { focusChange ->
+                                when (focusChange) {
+                                    android.media.AudioManager.AUDIOFOCUS_LOSS,
+                                    android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                                        activity.runOnUiThread {
+                                            notifyListeners("mediaAction", JSObject().apply { put("action", "pause") })
+                                        }
+                                    }
+                                    android.media.AudioManager.AUDIOFOCUS_GAIN -> {
+                                        activity.runOnUiThread {
+                                            notifyListeners("mediaAction", JSObject().apply { put("action", "play") })
+                                        }
+                                    }
+                                }
+                            },
+                            android.media.AudioManager.STREAM_MUSIC,
+                            android.media.AudioManager.AUDIOFOCUS_GAIN
+                        )
                     }
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -216,6 +223,7 @@ class MediaSessionPlugin : Plugin() {
     }
 
     private fun updatePlaybackState(isPlaying: Boolean) {
+        mediaSession?.isActive = isPlaying
         val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
         val playbackState = PlaybackStateCompat.Builder()
             .setActions(
