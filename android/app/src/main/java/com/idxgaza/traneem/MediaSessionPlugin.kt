@@ -62,8 +62,7 @@ class MediaSessionPlugin : Plugin() {
                             android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                                 notifyListeners("mediaAction", JSObject().apply { put("action", "pause") })
                             }
-                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                            android.view.KeyEvent.KEYCODE_HEADSETHOOK -> {
+                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                                 notifyListeners("mediaAction", JSObject().apply { put("action", "toggle") })
                             }
                             android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> {
@@ -93,10 +92,10 @@ class MediaSessionPlugin : Plugin() {
         mediaSession = MediaSessionCompat(context, "TraneemMediaSession").apply {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
-                    notifyListeners("mediaAction", JSObject().apply { put("action", "play") })
+                    notifyListeners("mediaAction", JSObject().apply { put("action", "toggle") })
                 }
                 override fun onPause() {
-                    notifyListeners("mediaAction", JSObject().apply { put("action", "pause") })
+                    notifyListeners("mediaAction", JSObject().apply { put("action", "toggle") })
                 }
                 override fun onSkipToNext() {
                     notifyListeners("mediaAction", JSObject().apply { put("action", "next") })
