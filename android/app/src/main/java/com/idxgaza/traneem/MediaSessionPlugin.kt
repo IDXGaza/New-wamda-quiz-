@@ -32,6 +32,7 @@ class MediaSessionPlugin : Plugin() {
     private var mediaSession: MediaSessionCompat? = null
     private val CHANNEL_ID = "traneem_media"
     private val NOTIFICATION_ID = 1
+    private var audioFocusRequest: android.media.AudioFocusRequest? = null
 
     private val receiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -174,19 +175,32 @@ class MediaSessionPlugin : Plugin() {
 
                 val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
-                        .setAudioAttributes(
-                            android.media.AudioAttributes.Builder()
-                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                                .build()
-                        )
-                        .build()
-                    audioManager.requestAudioFocus(focusRequest)
+                if (isPlaying) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                            .setAudioAttributes(
+                                android.media.AudioAttributes.Builder()
+                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                                    .build()
+                            )
+                            .build()
+                        audioFocusRequest = focusRequest
+                        audioManager.requestAudioFocus(focusRequest)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        audioManager.requestAudioFocus(null, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN)
+                    }
                 } else {
-                    @Suppress("DEPRECATION")
-                    audioManager.requestAudioFocus(null, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        audioFocusRequest?.let {
+                            audioManager.abandonAudioFocusRequest(it)
+                            audioFocusRequest = null
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        audioManager.abandonAudioFocus(null)
+                    }
                 }
 
                 showNotification(title, artist, finalBitmap, isPlaying)
