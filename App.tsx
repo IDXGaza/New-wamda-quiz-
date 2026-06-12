@@ -5,7 +5,6 @@ const MediaSession = registerPlugin<{
   updatePlaybackState: (opts: { isPlaying: boolean }) => Promise<void>;
   hideNotification: () => Promise<void>;
 }>('MediaSession');
-import { LocalNotifications } from '@capacitor/local-notifications';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as fflate from 'fflate';
 import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -136,28 +135,7 @@ const App: React.FC = () => {
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
   const lastStatsUpdateRef = useRef<number>(0);
 
-  useEffect(() => {
-    // Trigger on first interaction to avoid automated block
-    const handleInteraction = async () => {
-      try {
-        if ('Notification' in window && Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
-      } catch (e) {
-        console.warn('Permission request failed', e);
-      }
-      window.removeEventListener('click', handleInteraction);
-      window.removeEventListener('touchstart', handleInteraction);
-    };
 
-    window.addEventListener('click', handleInteraction);
-    window.addEventListener('touchstart', handleInteraction);
-
-    return () => {
-      window.removeEventListener('click', handleInteraction);
-      window.removeEventListener('touchstart', handleInteraction);
-    };
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -320,7 +298,9 @@ const App: React.FC = () => {
     localStorage.setItem('defaultView', view);
   };
 
-  const touchStartRef = useRef<number | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+  const isSwipeCancelledRef = useRef<boolean>(false);
   
   useEffect(() => {
     // Check for redirect result on load
@@ -344,38 +324,60 @@ const App: React.FC = () => {
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartRef.current = e.touches[0].clientX;
+    if (isRecording) return;
+    const touch = e.touches[0];
+    touchStartXRef.current = touch.clientX;
+    touchStartYRef.current = touch.clientY;
+    isSwipeCancelledRef.current = false;
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartRef.current === null) return;
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isRecording || touchStartXRef.current === null || touchStartYRef.current === null || isSwipeCancelledRef.current) return;
 
-    if (isRecording) {
-      touchStartRef.current = null;
-      return;
-    }
+    const touch = e.touches[0];
+    const diffX = touchStartXRef.current - touch.clientX;
+    const diffY = touchStartYRef.current - touch.clientY;
 
+    // Reject inputs, buttons, range sliders, or drag-immune widgets from firing global swipe events
     const target = e.target as HTMLElement;
     if (
       target.tagName.toLowerCase() === 'input' || 
       target.tagName.toLowerCase() === 'button' ||
-      target.closest('button')
+      target.closest('button') ||
+      target.closest('.no-swipe') ||
+      target.closest('input[type="range"]')
     ) {
-      touchStartRef.current = null;
+      isSwipeCancelledRef.current = true;
       return;
     }
 
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartRef.current - touchEndX;
-    
-    if (diff > 70) {
-      // Swiped from right to left
-      setIsSidebarOpen(true);
-    } else if (diff < -70) {
-      // Swiped from left to right
-      setIsSidebarOpen(false);
+    // Mathematical horizontal swipe priority (width vs slope check)
+    // Decreased trigger threshold from 30px to 22px delivers instant, butter-smooth physical response!
+    const thresholdX = 22;
+
+    if (Math.abs(diffX) > thresholdX && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+      if (isSidebarOpen) {
+        // Swipe to the right (finger moves right, diffX is negative) pushes the right sidebar away
+        if (diffX < -thresholdX) {
+          setIsSidebarOpen(false);
+          touchStartXRef.current = null;
+          touchStartYRef.current = null;
+        }
+      } else {
+        // Swipe to the left (finger moves left, pulling from right edge to center, diffX is positive) reveals sidebar
+        if (diffX > thresholdX) {
+          setIsSidebarOpen(true);
+          touchStartXRef.current = null;
+          touchStartYRef.current = null;
+        }
+      }
     }
-    touchStartRef.current = null;
+  };
+
+  const handleTouchEnd = () => {
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+    isSwipeCancelledRef.current = false;
   };
 
   useEffect(() => {
@@ -662,19 +664,7 @@ const App: React.FC = () => {
     if (!audio) return;
     initAudioCtx();
     
-    // Explicitly request notification permissions on user interaction for native Android support
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const check = await LocalNotifications.checkPermissions();
-        if (check.display !== 'granted') {
-          await LocalNotifications.requestPermissions();
-        }
-      } else if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().catch(() => {});
-      }
-    } catch (e) {
-      console.warn('Silent permission request failed', e);
-    }
+
 
     if (playerState.isPlaying) {
       audio.pause();
@@ -1252,6 +1242,7 @@ const App: React.FC = () => {
       dir="rtl"
       className={`flex flex-col h-screen h-[100dvh] bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-cairo ${!isRecording ? 'watercolor-bg' : ''} relative transition-colors duration-300`}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       {/* الهيدر العلوي */}

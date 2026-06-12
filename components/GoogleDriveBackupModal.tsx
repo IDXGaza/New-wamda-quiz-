@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { 
   getAccessToken,
   uploadBackupToDrive, 
@@ -37,13 +36,13 @@ export default function GoogleDriveBackupModal({
   onBackupSuccess,
   tracks
 }: GoogleDriveBackupModalProps) {
+  // Drive backup states
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isProcessingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -62,6 +61,8 @@ export default function GoogleDriveBackupModal({
     }
   }, [accessToken]);
 
+
+  // Old Google Drive functionality
   const loadBackupList = async () => {
     if (!accessToken) return;
     setIsLoading(true);
@@ -87,8 +88,8 @@ export default function GoogleDriveBackupModal({
     setBackupStatusMessage(null);
     try {
       const { getAccessToken } = await import('../services/googleDrive');
-      const accessToken = await getAccessToken();
-      setAccessToken(accessToken);
+      const token = await getAccessToken();
+      setAccessToken(token);
     } catch (err: any) {
       setBackupStatusMessage(`فشل الاتصال بدرايف: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
@@ -102,87 +103,80 @@ export default function GoogleDriveBackupModal({
   };
 
   const handleCreateBackup = async () => {
-    if (!accessToken) return;
-    if (isBackupProcessing || isLoading || activeActionId) {
+    if (isLoading || isBackupProcessing || activeActionId) {
       setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
       return;
     }
+    if (!accessToken) {
+      setBackupStatusMessage('انتهت الجلسة. أعد الاتصال بـ Google Drive.');
+      return;
+    }
     setIsBackupProcessing(true);
-    setBackupStatusMessage('جاري إعداد النسخة الاحتياطية...');
+    setBackupStatusMessage('جاري تجميع وضغط البيانات الصوتية (ZIP)...');
     try {
       const zipBlob = await createBackupZip();
       setBackupStatusMessage('جاري رفع الملف إلى Google Drive...');
       await uploadBackupToDrive(zipBlob, accessToken);
       setBackupStatusMessage('تم رفع النسخة الاحتياطية السحابية بنجاح!');
       onBackupSuccess();
-      await loadBackupList();
+      loadBackupList();
     } catch (err: any) {
       console.error(err);
-      setBackupStatusMessage('فشل رفع النسخة الاحتياطية للسحابة.');
+      setBackupStatusMessage(`فشل الرفع: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsBackupProcessing(false);
-      setTimeout(() => setBackupStatusMessage(null), 4000);
     }
   };
 
   const handleRestoreBackup = async (file: DriveBackupFile) => {
-    if (!accessToken) return;
-    if (isBackupProcessing || isLoading || activeActionId) {
-      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
-      return;
-    }
-    
     const confirmed = window.confirm(
-      `هل أنت متأكد من استعادة النسخة الاحتياطية "${file.name}"؟ ستقوم هذه العملية بدمج وتحديث الأناشيد الحالية.`
+      `هل أنت متأكد من استعادة النسخة الاحتياطية "${file.name}"؟ سيتم استبدال الأناشيد الحالية.`
     );
     if (!confirmed) return;
+    if (!accessToken) {
+      setBackupStatusMessage('انتهت الجلسة. أعد الاتصال بـ Google Drive.');
+      return;
+    }
 
     setIsBackupProcessing(true);
     setActiveActionId(file.id);
     setBackupStatusMessage('جاري تحميل ملف الاستعادة من Google Drive...');
     try {
       const blob = await downloadBackupFromDrive(file.id, accessToken);
-      setBackupStatusMessage('جاري فك واستعادة البيانات...');
       await restoreBackupZip(blob);
-      setBackupStatusMessage('تمت استعادة النسخة الاحتياطية بنجاح!');
-      alert('تمت استعادة الأناشيد والبيانات بنجاح!');
+      setBackupStatusMessage('تم استعادة البيانات والملفات بنجاح!');
     } catch (err: any) {
       console.error(err);
-      setBackupStatusMessage('فشل في استعادة النسخة الاحتياطية.');
-      alert('فشل في استعادة النسخة الاحتياطية.');
+      setBackupStatusMessage(`فشلت استعادة الملف: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
-      setActiveActionId(null);
       setIsBackupProcessing(false);
-      setTimeout(() => setBackupStatusMessage(null), 4000);
+      setActiveActionId(null);
     }
   };
 
   const handleDeleteBackup = async (file: DriveBackupFile) => {
-    if (!accessToken) return;
-    if (isBackupProcessing || isLoading || activeActionId) {
-      setBackupStatusMessage('هناك عملية جارية بالفعل. يرجى الانتظار.');
-      return;
-    }
-
     const confirmed = window.confirm(
       `هل أنت متأكد من حذف النسخة "${file.name}" من Google Drive نهائياً؟`
     );
     if (!confirmed) return;
+    if (!accessToken) {
+      setBackupStatusMessage('انتهت الجلسة. أعد الاتصال بـ Google Drive.');
+      return;
+    }
 
     setIsBackupProcessing(true);
     setActiveActionId(file.id);
     setBackupStatusMessage('جاري حذف الملف من Google Drive...');
     try {
       await deleteBackupFromDrive(file.id, accessToken);
-      setBackups(prev => prev.filter(b => b.id !== file.id));
-      setBackupStatusMessage('تم حذف النسخة الاحتياطية بنجاح.');
+      setBackupStatusMessage('تم حذف النسخة بنجاح.');
+      loadBackupList();
     } catch (err: any) {
       console.error(err);
-      setBackupStatusMessage('فشل حذف الملف.');
+      setBackupStatusMessage(`فشل الحذف الرقمي: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
-      setActiveActionId(null);
       setIsBackupProcessing(false);
-      setTimeout(() => setBackupStatusMessage(null), 4000);
+      setActiveActionId(null);
     }
   };
 
@@ -303,7 +297,7 @@ export default function GoogleDriveBackupModal({
       setBackupStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsBackupProcessing(false);
-      setTimeout(() => setBackupStatusMessage(null), 4000);
+      setTimeout(() => setBackupStatusMessage(null), 4005);
     }
   };
 
@@ -359,7 +353,7 @@ export default function GoogleDriveBackupModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in font-cairo">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in font-sans">
       <div 
         className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[28px] shadow-2xl overflow-hidden flex flex-col text-right animate-in fade-in zoom-in-95 duration-200"
         dir="rtl"
@@ -368,11 +362,11 @@ export default function GoogleDriveBackupModal({
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-[#4da8ab]/10 dark:bg-[#4da8ab]/20 rounded-xl text-[#4da8ab]">
-              <svg className="w-5 h-5 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-8m0 8l-4-4m4 4l4-4M12 4v4m0 12h.01" />
               </svg>
             </div>
-            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">مركز النسخ الاحتياطي والاستعادة</h3>
+            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">مركز المزامنة والنسخ الاحتياطي</h3>
           </div>
           <button 
             onClick={onClose} 
@@ -388,129 +382,91 @@ export default function GoogleDriveBackupModal({
         <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
           <StatsWidget tracks={tracks} />
 
-          <div className="bg-white/50 dark:bg-slate-900/50 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 flex flex-col space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h4 className="text-xs font-black text-slate-800 dark:text-slate-100">أذونات الإشعارات</h4>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">مطلوب لتشغيل واجهة التحكم في الإشعارات</p>
-              </div>
-              <button 
-                onClick={async () => {
-                  try {
-                    if (Capacitor.isNativePlatform()) {
-                      const status = await LocalNotifications.requestPermissions();
-                      if (status.display === 'granted') {
-                        alert('تم تفعيل الإشعارات بنجاح');
-                      } else if (status.display === 'denied') {
-                        alert('تم رفض الإذن. يرجى تفعيله من إعدادات النظام.');
-                      } else {
-                        alert('لم يتم تغيير حالة الإذن');
-                      }
-                    } else if ('Notification' in window) {
-                      const status = await Notification.requestPermission();
-                      if (status === 'granted') {
-                        alert('تم تفعيل الإشعارات بنجاح');
-                      } else {
-                        alert('تم رفض الإذن أو لم يتم تغييره');
-                      }
-                    } else {
-                      alert('متصفحك لا يدعم الإشعارات');
-                    }
-                  } catch (e) {
-                    alert('حدث خطأ في طلب الإذن');
-                  }
-                }}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-black text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              >
-                طلب الإذن
-              </button>
-            </div>
-          </div>
-
           {backupStatusMessage && (
-            <div className="p-3.5 text-xs text-center font-bold bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] rounded-2xl flex items-center justify-center gap-2 border border-[#4da8ab]/10 animate-pulse">
-              {isBackupProcessing && (
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              )}
-              <span>{backupStatusMessage}</span>
+            <div className="p-3.5 text-xs text-center font-bold bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] rounded-2xl flex flex-col items-center justify-center gap-2 border border-[#4da8ab]/10">
+              <div className="flex items-center justify-center gap-2 animate-pulse">
+                {isBackupProcessing && (
+                  <svg className="w-4 h-4 animate-spin text-[#4da8ab]" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                <span>{backupStatusMessage}</span>
+              </div>
             </div>
           )}
-
-          {/* Section 1: Local Offline Backup & Restore */}
-          <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-2xl border border-dashed border-[#4da8ab]/30 dark:border-[#4da8ab]/20 space-y-4">
+          <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex items-start gap-3">
               <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-600 dark:text-emerald-400">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <div className="space-y-1 text-right">
-                <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">1. النسخ الاحتياطي المحلي والتصدير</h4>
+              <div className="space-y-0.5 text-right">
+                <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">النسخ الاحتياطي والمشاركة</h4>
+                <p className="text-[10px] text-slate-400 font-bold">حفظ واستيراد ملفات الأناشيد والتسجيلات</p>
               </div>
             </div>
 
              {Capacitor.isNativePlatform() ? (
-              <div className="flex flex-col gap-3 pt-2">
+              <div className="flex flex-col gap-3 pt-1">
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => handleLocalExport('save')}
                     disabled={isLoading || isBackupProcessing}
-                    className="flex flex-col items-center justify-center gap-2 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex flex-col items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] py-4 px-2 rounded-2xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                     </svg>
-                    <span>حفظ مباشر للهاتف 💾</span>
+                    <span>حفظ للهاتف</span>
                   </button>
 
                   <button
                     onClick={() => handleLocalExport('share')}
                     disabled={isLoading || isBackupProcessing}
-                    className="flex flex-col items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[11px] py-4 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex flex-col items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[11px] py-4 px-2 rounded-2xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                   >
                     <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                     </svg>
-                    <span>مشاركة (تليجرام...) 📤</span>
+                    <span>مشاركة الملف</span>
                   </button>
                 </div>
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isLoading || isBackupProcessing}
-                  className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3.5 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3.5 px-2 rounded-2xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
                   </svg>
-                  <span>استيراد ملف نسخة احتياطية (ZIP) 📂</span>
+                  <span>استيراد نسخة سابقة</span>
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 <button
                   onClick={() => handleLocalExport('save')}
                   disabled={isLoading || isBackupProcessing}
-                  className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="col-span-1 flex items-center justify-center gap-1.5 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-extrabold text-[12px] py-3 px-2 rounded-2xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                   </svg>
-                  <span>تصدير نسخة (ZIP)</span>
+                  <span>تصدير نسخة</span>
                 </button>
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isLoading || isBackupProcessing}
-                  className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="col-span-1 flex items-center justify-center gap-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-extrabold text-[12px] py-3 px-2 rounded-2xl shadow-sm hover:shadow active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                 >
                   <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
                   </svg>
-                  <span>استيراد ملف (ZIP)</span>
+                  <span>استيراد نسخة</span>
                 </button>
               </div>
             )}
@@ -524,18 +480,18 @@ export default function GoogleDriveBackupModal({
             />
           </div>
 
-          {/* Section 2: Google Drive Cloud Backup (Optional) */}
+          {/* Section 3: Google Drive Cloud Backup (Optional Option) */}
           <div className="space-y-4 pt-1">
             <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-4">
-              <h4 className="text-xs font-black tracking-wider text-slate-400">2. النسخ الاحتياطي السحابي (Google Drive)</h4>
+              <h4 className="text-xs font-black tracking-wider text-slate-400">المزامنة عبر Google Drive</h4>
             </div>
 
             {!accessToken ? (
-              <div className="flex flex-col items-center justify-center py-4 text-center space-y-3.5">
+              <div className="flex flex-col items-center justify-center py-2 text-center space-y-3.5">
                 <button 
                   onClick={handleConnect}
                   disabled={isLoading}
-                  className="flex items-center gap-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-2xl shadow-sm font-bold text-xs transition-all duration-300 transform active:scale-95 disabled:opacity-50"
+                  className="flex items-center gap-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-200 rounded-2xl shadow-sm font-bold text-xs transition-all duration-300 transform active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
                   <svg className="w-4.5 h-4.5 flex-shrink-0" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
                     <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
@@ -548,7 +504,7 @@ export default function GoogleDriveBackupModal({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                <div className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/60">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-600 font-bold text-xs">
                       G
@@ -558,9 +514,10 @@ export default function GoogleDriveBackupModal({
                       <p className="text-[10px] font-medium text-slate-400">متصل بـ Google Drive</p>
                     </div>
                   </div>
+
                   <button 
                     onClick={handleDisconnect}
-                    className="px-2.5 py-1 text-[11px] font-bold text-red-500 hover:text-red-650 bg-red-500/5 hover:bg-red-500/10 rounded-lg transition-all"
+                    className="px-2.5 py-1 text-[11px] font-semibold text-red-500 hover:text-red-650 bg-red-500/5 hover:bg-red-500/10 rounded-lg transition-all"
                   >
                     فصل الحساب
                   </button>
@@ -569,7 +526,7 @@ export default function GoogleDriveBackupModal({
                 <button
                   onClick={handleCreateBackup}
                   disabled={isBackupProcessing}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-l from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl shadow-sm active:scale-[0.98] transition-all disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-l from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-extrabold text-xs py-3.5 px-4 rounded-xl shadow-sm active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {isBackupProcessing ? (
                     <>
@@ -584,18 +541,18 @@ export default function GoogleDriveBackupModal({
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
                       </svg>
-                      <span>إنشاء نسخة جديدة ورفعها الآن</span>
+                      <span>إنشاء نسخة جديدة ورفعها الآن لـ Drive</span>
                     </>
                   )}
                 </button>
 
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between px-1">
-                    <h5 className="text-[11px] font-black text-slate-400">النسخ الاحتياطية على السحابة</h5>
+                    <h5 className="text-[11px] font-black text-slate-400">النسخ الاحتياطية على السحابة (Drive)</h5>
                     <button 
                       onClick={loadBackupList} 
                       disabled={isLoading}
-                      className="p-1 rounded text-slate-400 hover:text-[#4da8ab] hover:bg-slate-50 transition-colors"
+                      className="p-1 rounded text-slate-400 hover:text-[#4da8ab] hover:bg-slate-50 transition-colors cursor-pointer"
                       title="تحديث القائمة"
                     >
                       <svg className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-[#4da8ab]' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -614,11 +571,11 @@ export default function GoogleDriveBackupModal({
                         <p className="text-[10px] text-slate-400 font-bold">جاري تحميل النسخ الاحتياطية...</p>
                       </div>
                     ) : backups.length === 0 ? (
-                      <div className="py-8 text-center bg-slate-50/50 dark:bg-slate-950/20 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                      <div className="py-8 text-center bg-slate-50/50 dark:bg-slate-950/20 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
                         <p className="text-[10px] text-slate-400 font-bold">لا توجد نسخ احتياطية مسجلة على درايف بعد</p>
                       </div>
                     ) : (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-slate-50/30 dark:bg-slate-950/10 rounded-xl border border-slate-100 dark:border-slate-800/50 overflow-hidden max-h-40 overflow-y-auto">
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800/80 bg-slate-50/30 dark:bg-slate-950/10 rounded-2xl border border-slate-100 dark:border-slate-800/50 overflow-hidden max-h-40 overflow-y-auto">
                         {backups.map((file) => (
                           <div 
                             key={file.id} 
@@ -658,7 +615,7 @@ export default function GoogleDriveBackupModal({
                               <button
                                 onClick={() => handleDeleteBackup(file)}
                                 disabled={activeActionId !== null}
-                                className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-all active:scale-90 disabled:opacity-40"
+                                className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-all active:scale-90 disabled:opacity-40 cursor-pointer"
                                 title="حذف من درايف"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

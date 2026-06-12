@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { 
   Plus, 
   Mic, 
@@ -13,8 +12,7 @@ import {
   X, 
   Shuffle, 
   AlertCircle,
-  GripVertical,
-  Bell
+  GripVertical
 } from 'lucide-react';
 import { Track } from '../types';
 
@@ -49,42 +47,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
-  const [notificationPermission, setNotificationPermission] = useState<string>('default');
-
-  useEffect(() => {
-    const checkPermissions = async () => {
-      try {
-        if (Capacitor.isNativePlatform()) {
-          const status = await LocalNotifications.checkPermissions();
-          setNotificationPermission(status.display);
-        } else if ('Notification' in window) {
-          setNotificationPermission(Notification.permission);
-        }
-      } catch (e) {
-        console.warn('Check permission error', e);
-      }
-    };
-    checkPermissions();
-  }, [isOpen]);
-
-  const requestPermission = async () => {
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const status = await LocalNotifications.requestPermissions();
-        setNotificationPermission(status.display);
-        if (status.display === 'denied') {
-          alert('تم رفض الإذن. يرجى تفعيله من إعدادات النظام لتتمكن من تلقي التنبيهات وإظهار أزرار التحكم.');
-        } else if (status.display === 'granted') {
-          alert('تم تفعيل الإشعارات بنجاح.');
-        }
-      } else if ('Notification' in window) {
-        const status = await Notification.requestPermission();
-        setNotificationPermission(status);
-      }
-    } catch (e) {
-      console.warn('Request permission error', e);
-    }
-  };
 
   // Touch reordering refs & states
   const touchStartY = useRef<number>(0);
@@ -422,30 +384,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <nav ref={navRef} className="flex-1 min-h-0 overflow-y-auto px-5 pb-36 space-y-4 pt-4 custom-scrollbar overscroll-contain">
-          {notificationPermission !== 'granted' && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="mb-6 p-4 bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 border border-[#4da8ab]/20 rounded-2xl space-y-3"
-            >
-              <div className="flex items-start gap-3">
-                <Bell className="w-5 h-5 text-[#4da8ab] shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">إشعارات التحكم</h4>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                    يرجى تفعيل الإشعارات لتتمكن من التحكم في المشغل من خارج التطبيق (مركز التحكم).
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={requestPermission}
-                className="w-full py-2 bg-[#4da8ab] text-white text-[11px] font-black rounded-xl hover:bg-[#3d8b8d] transition-colors active:scale-[0.98]"
-              >
-                تفعيل الإشعارات الآن
-              </button>
-            </motion.div>
-          )}
-
           {showBackupReminder && (
             <motion.div 
               initial={{ opacity: 0, y: -20 }}

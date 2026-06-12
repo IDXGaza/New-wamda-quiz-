@@ -7,7 +7,7 @@ export interface DriveBackupFile {
   createdTime: string;
 }
 
-// Modern Web Authentication placeholder
+// Modern Web Authentication with Firebase Auth
 export const getAccessToken = async (): Promise<string> => {
   if (Capacitor.isNativePlatform()) {
     try {
@@ -22,8 +22,25 @@ export const getAccessToken = async (): Promise<string> => {
       throw new Error(msg);
     }
   } else {
-    // For Web, assume an existing implementation or hook into GIS
-    throw new Error('الويب غير مدعوم حالياً في هذه الخدمة');
+    try {
+      const { auth } = await import('../firebase');
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      
+      const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/drive.appdata');
+      
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const accessToken = credential?.accessToken;
+      
+      if (!accessToken) {
+        throw new Error('فشل الحصول على رمز الوصول من قوقل (Access Token). تأكد من إعداد نطاقات الوصول (Scopes).');
+      }
+      return accessToken;
+    } catch (err: any) {
+      const msg = err?.message || err?.code || JSON.stringify(err) || 'خطأ غير معروف';
+      throw new Error(`فشل تسجيل الدخول بالويب: ${msg}`);
+    }
   }
 };
 
