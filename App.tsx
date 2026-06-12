@@ -1317,7 +1317,7 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex overflow-hidden relative">
         {!isRecording && (
-          <div className={`transition-all duration-300 relative z-[60] h-full shrink-0 overflow-hidden ${isSidebarOpen ? 'w-[85%] sm:w-[400px] border-l border-slate-200 dark:border-slate-800' : 'w-0'}`}>
+          <div className={`transition-all duration-300 relative z-[200] h-full shrink-0 ${isSidebarOpen ? 'lg:w-[400px] lg:border-l border-slate-200 dark:border-slate-800' : 'w-0'}`}>
             <Sidebar 
               onImport={addTrack} onRemove={removeTrack} onMove={handleMoveTrack}
               onReorderEnd={handleReorderEnd}
@@ -1330,7 +1330,7 @@ const App: React.FC = () => {
               isRecording={isRecording} onStartRecording={handleStartRecording}
               showBackupReminder={showBackupReminder}
               onOpenBackup={() => setIsDriveModalOpen(true)}
-              className="!relative !w-full !translate-x-0 !shadow-none !z-10"
+              className="fixed inset-y-0 right-0 h-full w-[85%] sm:w-[400px] shadow-2xl z-[200] lg:!relative lg:!w-full lg:!shadow-none lg:!z-10 lg:!inset-auto"
             />
           </div>
         )}
