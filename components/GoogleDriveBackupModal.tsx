@@ -22,6 +22,7 @@ interface GoogleDriveBackupModalProps {
   setBackupStatusMessage: (msg: string | null) => void;
   onBackupSuccess: () => void;
   tracks: Track[];
+  onCancelBackup?: () => void;
 }
 
 export default function GoogleDriveBackupModal({
@@ -34,13 +35,18 @@ export default function GoogleDriveBackupModal({
   backupStatusMessage,
   setBackupStatusMessage,
   onBackupSuccess,
-  tracks
+  tracks,
+  onCancelBackup
 }: GoogleDriveBackupModalProps) {
   // Drive backup states
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
+
+  const [tempBlob, setTempBlob] = useState<Blob | null>(null);
+  const [preparedName, setPreparedName] = useState('');
+  const [preparedMethod, setPreparedMethod] = useState<'save' | 'share' | 'drive' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,15 +121,40 @@ export default function GoogleDriveBackupModal({
     setBackupStatusMessage('جاري تجميع وضغط البيانات الصوتية (ZIP)...');
     try {
       const zipBlob = await createBackupZip();
+      
+      const now = new Date();
+      const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+      const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
+      const defaultName = `نسخة_ترانيم_${datePart}_${timePart}`;
+      
+      setTempBlob(zipBlob);
+      setPreparedName(defaultName);
+      setPreparedMethod('drive');
+      setBackupStatusMessage('تم تجهيز النسخة! يمكنك تسميتها ثم رفعها:');
+    } catch (err: any) {
+      console.error(err);
+      setBackupStatusMessage(`فشل الرفع: ${err?.message || 'خطأ غير معروف'}`);
+      setIsBackupProcessing(false);
+    }
+  };
+
+  const finalizeDriveUpload = async () => {
+    if (!tempBlob || !accessToken) return;
+    setIsLoading(true);
+    try {
       setBackupStatusMessage('جاري رفع الملف إلى Google Drive...');
-      await uploadBackupToDrive(zipBlob, accessToken);
-      setBackupStatusMessage('تم رفع النسخة الاحتياطية السحابية بنجاح!');
+      const finalName = preparedName.endsWith('.zip') ? preparedName : `${preparedName}.zip`;
+      await uploadBackupToDrive(tempBlob, accessToken, finalName);
+      setBackupStatusMessage('تم رفع النسخة الاحتياطية السحابية بنجاح! 🎉');
       onBackupSuccess();
       loadBackupList();
+      setTempBlob(null);
+      setPreparedMethod(null);
     } catch (err: any) {
       console.error(err);
       setBackupStatusMessage(`فشل الرفع: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
+      setIsLoading(false);
       setIsBackupProcessing(false);
     }
   };
@@ -194,37 +225,47 @@ export default function GoogleDriveBackupModal({
       const now = new Date();
       const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
       const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-      const exportName = `نسخة_احتياطية_ترانيم_${datePart}_${timePart}.zip`;
+      const defaultName = `نسخة_احتياطية_ترانيم_${datePart}_${timePart}`;
+      
+      setTempBlob(zipBlob);
+      setPreparedName(defaultName);
+      setPreparedMethod(method);
+      setBackupStatusMessage('تم تجهيز النسخة! يرجى اختيار اسم لها:');
+    } catch (err: any) {
+      console.error("Local backup failed", err);
+      setBackupStatusMessage(`❌ فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
+      setIsBackupProcessing(false);
+    }
+  };
+
+  const finalizeLocalSave = async () => {
+    if (!tempBlob || !preparedMethod) return;
+    
+    setIsBackupProcessing(true);
+    try {
+      const exportName = preparedName.endsWith('.zip') ? preparedName : `${preparedName}.zip`;
 
       if (Capacitor.isNativePlatform()) {
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
-
-        // Write file in safe chunks to avoid WebView memory crashes on Android
-        const CHUNK_SIZE = 3145728; // 3 MB (Strictly divisible by 3 so Base64 chunks concatenate perfectly without padding issues)
-        const totalSize = zipBlob.size;
+        const CHUNK_SIZE = 3145728;
+        const totalSize = tempBlob.size;
         let numChunks = Math.ceil(totalSize / CHUNK_SIZE);
         if (numChunks === 0) numChunks = 1;
 
-        const targetDirectory = method === 'save' ? Directory.Documents : Directory.Cache;
+        const targetDirectory = preparedMethod === 'save' ? Directory.Documents : Directory.Cache;
 
-        // Ensure we delete any pre-existing file of the same name before writing
         try {
-          await Filesystem.deleteFile({
-            path: exportName,
-            directory: targetDirectory
-          });
-        } catch (e) {
-          // Ignore if it doesn't exist
-        }
+          await Filesystem.deleteFile({ path: exportName, directory: targetDirectory });
+        } catch (e) {}
 
         let firstChunkUri = '';
 
         for (let i = 0; i < numChunks; i++) {
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, totalSize);
-          const chunkBlob = zipBlob.slice(start, end);
+          const chunkBlob = tempBlob.slice(start, end);
 
-          setBackupStatusMessage(`جاري حفظ وتشفير الملف على الهاتف (${i + 1} / ${numChunks})...`);
+          setBackupStatusMessage(`جاري حفظ وتشفير الملف... (${i + 1} / ${numChunks})`);
 
           const base64Chunk = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -238,48 +279,35 @@ export default function GoogleDriveBackupModal({
           });
 
           if (i === 0) {
-            const result = await Filesystem.writeFile({
-              path: exportName,
-              data: base64Chunk,
-              directory: targetDirectory
-            });
+            const result = await Filesystem.writeFile({ path: exportName, data: base64Chunk, directory: targetDirectory });
             firstChunkUri = result.uri;
           } else {
-            await Filesystem.appendFile({
-              path: exportName,
-              data: base64Chunk,
-              directory: targetDirectory
-            });
+            await Filesystem.appendFile({ path: exportName, data: base64Chunk, directory: targetDirectory });
           }
         }
 
-        if (method === 'share') {
+        if (preparedMethod === 'share') {
           const { Share } = await import('@capacitor/share');
-          setBackupStatusMessage('جاري فتح قائمة الموارد لتنزيل وحفظ الملف...');
-          // Share via native popup so user can save or send anywhere they want
+          setBackupStatusMessage('جاري فتح قائمة المشاركة...');
           await Share.share({
             title: 'نسخة ترانيم الاحتياطية',
-            text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات من تطبيق ترانيم',
+            text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات',
             url: firstChunkUri,
             dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
           });
-          setBackupStatusMessage('تم إتمام العملية بنجاح!');
+          setBackupStatusMessage('تمت المشاركة بنجاح! 🎉');
         } else {
-          setBackupStatusMessage('تم حفظ الملف بنجاح!');
-          alert(`تم حفظ النسخة الاحتياطية بنجاح وبشكل مباشر على جهازك 💾\n\nاسم الملف:\n${exportName}\n\nتجدها في مدير ملفات هاتفك داخل المجلد الرئيسي ⬅️ مجلد المستندات (Documents).`);
+          setBackupStatusMessage('تم حفظ الملف بنجاح في مجلد المستندات! ✅');
         }
       } else {
-        const file = new File([zipBlob], exportName, { type: "application/zip" });
+        const file = new File([tempBlob], exportName, { type: "application/zip" });
         const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         
         if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: "نسخة ترانيم الاحتياطية",
-          });
-          setBackupStatusMessage('تمت مشاركة وحفظ الملف بنجاح!');
+          await navigator.share({ files: [file], title: "نسخة ترانيم الاحتياطية" });
+          setBackupStatusMessage('تمت مشاركة وحفظ الملف بنجاح! 🎉');
         } else {
-          const url = URL.createObjectURL(zipBlob);
+          const url = URL.createObjectURL(tempBlob);
           const link = document.createElement('a');
           link.href = url;
           link.download = exportName;
@@ -288,13 +316,15 @@ export default function GoogleDriveBackupModal({
           link.click();
           document.body.removeChild(link);
           setTimeout(() => URL.revokeObjectURL(url), 100);
-          setBackupStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح!');
+          setBackupStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح! ✅');
         }
       }
       onBackupSuccess();
+      setTempBlob(null);
+      setPreparedMethod(null);
     } catch (err: any) {
-      console.error("Local backup failed", err);
-      setBackupStatusMessage(`فشل إعداد النسخة: ${err?.message || 'خطأ غير معروف'}`);
+      console.error("Local backup finalization failed", err);
+      setBackupStatusMessage(`❌ فشل الحفظ: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsBackupProcessing(false);
       setTimeout(() => setBackupStatusMessage(null), 4005);
@@ -314,12 +344,10 @@ export default function GoogleDriveBackupModal({
     setBackupStatusMessage('جاري فك واستيراد النسخة الاحتياطية...');
     try {
       await restoreBackupZip(file);
-      setBackupStatusMessage('تم استيراد نسخة الأناشيد والملفات الصوتية بنجاح!');
-      alert('تم استيراد الأناشيد وكامل البيانات بنجاح بنسبة 100%!');
+      setBackupStatusMessage('اكتمل الاستيراد بنجاح! جاري تحديث المكتبة... ✅');
     } catch (err: any) {
       console.error("Local restore failed", err);
-      setBackupStatusMessage('فشل الاستعادة. تأكد من صحة ملف الـ ZIP.');
-      alert('فشل استيراد النسخة! يرجى اختيار ملف ZIP صالح تم تصديره مسبقاً من تطبيق ترانيم.');
+      setBackupStatusMessage('❌ فشل الاستعادة! تأكد من صحة الملف.');
     } finally {
       setIsBackupProcessing(false);
       e.target.value = '';
@@ -383,16 +411,66 @@ export default function GoogleDriveBackupModal({
           <StatsWidget tracks={tracks} />
 
           {backupStatusMessage && (
-            <div className="p-3.5 text-xs text-center font-bold bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] rounded-2xl flex flex-col items-center justify-center gap-2 border border-[#4da8ab]/10">
-              <div className="flex items-center justify-center gap-2 animate-pulse">
+            <div className={`p-3.5 text-xs text-center font-bold rounded-2xl flex flex-col items-center justify-center gap-2 border transition-all duration-500 ${
+              backupStatusMessage.includes('✅') || backupStatusMessage.includes('🎉') || backupStatusMessage.includes('نجاح')
+              ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
+              : backupStatusMessage.includes('❌') || backupStatusMessage.includes('فشل')
+              ? 'bg-rose-500/10 text-rose-600 border-rose-500/20'
+              : 'bg-[#4da8ab]/5 dark:bg-[#4da8ab]/10 text-[#4da8ab] border-[#4da8ab]/10'
+            }`}>
+              <div className="flex items-center justify-center gap-2">
                 {isBackupProcessing && (
                   <svg className="w-4 h-4 animate-spin text-[#4da8ab]" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 )}
-                <span>{backupStatusMessage}</span>
+                <span className={isBackupProcessing ? 'animate-pulse' : ''}>{backupStatusMessage}</span>
               </div>
+              
+              {tempBlob && (
+                <div className="w-full flex flex-col gap-2 mt-2 px-1">
+                  <div className="flex bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-[#4da8ab]/30 transition-all">
+                    <input 
+                      type="text"
+                      dir="rtl"
+                      placeholder="اسم النسخة الاحتياطية..."
+                      value={preparedName}
+                      onChange={(e) => setPreparedName(e.target.value)}
+                      className="flex-1 bg-transparent px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none"
+                    />
+                    <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2 text-[10px] text-slate-400 font-bold border-r border-slate-100 dark:border-slate-800 flex items-center">.zip</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => preparedMethod === 'drive' ? finalizeDriveUpload() : finalizeLocalSave()}
+                      className="flex-1 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-black text-[11px] py-2.5 rounded-xl shadow-sm active:scale-95 transition-all"
+                    >
+                      🚀 {preparedMethod === 'drive' ? 'تأكيد الرفع لـ Drive' : 'تأكيد الحفظ الآن'}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setTempBlob(null);
+                        setPreparedMethod(null);
+                        setBackupStatusMessage(null);
+                        setIsBackupProcessing(false);
+                      }}
+                      className="px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 font-black text-[11px] rounded-xl transition-all"
+                    >
+                      تراجع
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isBackupProcessing && onCancelBackup && !tempBlob && (
+                <button 
+                  onClick={onCancelBackup}
+                  className="mt-1 px-3 py-1 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-[10px] text-slate-600 dark:text-slate-300 rounded-lg transition-all active:scale-95 border border-slate-300/30 font-black"
+                >
+                  إلغاء العملية 🛑
+                </button>
+              )}
             </div>
           )}
           <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-4">
@@ -404,7 +482,7 @@ export default function GoogleDriveBackupModal({
               </div>
               <div className="space-y-0.5 text-right">
                 <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">النسخ الاحتياطي والمشاركة</h4>
-                <p className="text-[10px] text-slate-400 font-bold">حفظ واستيراد ملفات الأناشيد والتسجيلات</p>
+                <p className="text-[10px] text-slate-400 font-bold">حفظ واستيراد النسخ (تجدها في Downloads/المستندات)</p>
               </div>
             </div>
 

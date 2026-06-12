@@ -176,53 +176,68 @@ const App: React.FC = () => {
     setShowBackupReminder(false);
   };
 
+  const [backupCancelSignal, setBackupCancelSignal] = useState(false);
+
   const createBackupZipBlob = async (): Promise<Blob> => {
     setIsBackupProcessing(true);
-    setBackupStatusMessage('جاري تحضير الملفات...');
+    setBackupStatusMessage('⏳ جاري جلب البيانات من الذاكرة...');
+    setBackupCancelSignal(false);
     try {
       const allTracks = await getAllTracksFromDB();
       const files: any = {};
       
-      const metadataPromises = allTracks.map(async (t) => {
+      // Parallelize processing to maximize speed
+      await Promise.all(allTracks.map(async (t, i) => {
+        if (backupCancelSignal) throw new Error('العملية ألغيت');
+        
         const trackMetadata = { ...t };
-        const trackTasks: Promise<void>[] = [];
+        
+        // Progress reporting (every 5 tracks to avoid UI lag)
+        if (i % 5 === 0 || i === allTracks.length - 1) {
+          setBackupStatusMessage(`📦 تجهيز: ${t.name} (${i + 1}/${allTracks.length})`);
+        }
 
         if (t.fileBlob) {
-          trackTasks.push((async () => {
-             const buf = await t.fileBlob.arrayBuffer();
-             files[`audio/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
-          })());
+          const buf = await t.fileBlob.arrayBuffer();
+          // MP3 is already compressed, store without compression for max speed
+          files[`audio/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
           trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
         }
         if (t.coverBlob) {
-          trackTasks.push((async () => {
-             const buf = await t.coverBlob.arrayBuffer();
-             files[`covers/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
-          })());
+          const buf = await t.coverBlob.arrayBuffer();
+          // Images are compressed, store without compression
+          files[`covers/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
           trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
         }
-
-        if (trackTasks.length > 0) await Promise.all(trackTasks);
         
         delete trackMetadata.fileBlob;
         delete trackMetadata.coverBlob;
         delete trackMetadata.url;
         delete trackMetadata.coverUrl;
-        return trackMetadata;
-      });
+        
+        allTracks[i] = trackMetadata;
+      }));
 
-      const metadata = await Promise.all(metadataPromises);
-      files["metadata.json"] = [fflate.strToU8(JSON.stringify(metadata)), { level: 0 }];
+      if (backupCancelSignal) throw new Error('العملية ألغيت');
+
+      // metadata.json is text, compress it maximum to keep ZIP size down
+      files["metadata.json"] = [fflate.strToU8(JSON.stringify(allTracks)), { level: 9 }];
       
-      setBackupStatusMessage('جاري إنشاء الملف (سريع جداً)...');
+      setBackupStatusMessage('⚡ جاري الحفظ النهائي (سرعة قصوى)...');
       return new Promise((resolve, reject) => {
-        fflate.zip(files, (err, data) => {
+        // Main zip with no compression for immediate speed
+        fflate.zip(files, { level: 0 }, (err, data) => {
           if (err) reject(err);
           else resolve(new Blob([data], { type: "application/zip" }));
         });
       });
+    } catch (err: any) {
+      if (err.message === 'العملية ألغيت') {
+        throw new Error('CANCELLED');
+      }
+      throw err;
     } finally {
-      // Done
+      setIsBackupProcessing(false);
     }
   };
 
@@ -245,7 +260,8 @@ const App: React.FC = () => {
       
       const metadata = JSON.parse(fflate.strFromU8(metadataU8));
       
-      for (const t of metadata) {
+      // Optimization: Parallel save to DB
+      await Promise.all(metadata.map(async (t: any) => {
         const trackToSave = { ...t };
         if (t.fileBlobPath && decompressed[t.fileBlobPath]) {
           trackToSave.fileBlob = new Blob([decompressed[t.fileBlobPath]] as any);
@@ -257,7 +273,7 @@ const App: React.FC = () => {
         }
         trackToSave.sourceType = 'import';
         await saveTrackToDB(trackToSave);
-      }
+      }));
       
       const local = await getAllTracksFromDB();
       const withUrls = local.map(t => ({
@@ -267,13 +283,13 @@ const App: React.FC = () => {
       }));
       setTracks(withUrls.sort((a, b) => a.order - b.order));
       recordSuccessfulBackup();
-      alert("تم استعادة النسخة الاحتياطية بنجاح");
+      setBackupStatusMessage('تمت الاستعادة بنجاح! جاري تحديث المكتبة... ✅');
     } catch (error) {
       console.error("Restore error:", error);
-      alert("فشل استعادة البيانات. تأكد من أن الملف صحيح.");
+      setBackupStatusMessage('❌ فشل استعادة البيانات. تأكد من أن الملف صحيح.');
     } finally {
       setIsBackupProcessing(false);
-      setBackupStatusMessage(null);
+      setTimeout(() => setBackupStatusMessage(null), 5000);
     }
   };
 
@@ -1432,6 +1448,7 @@ const App: React.FC = () => {
         setBackupStatusMessage={setBackupStatusMessage}
         onBackupSuccess={recordSuccessfulBackup}
         tracks={tracks}
+        onCancelBackup={() => setBackupCancelSignal(true)}
       />
 
       {cropperData && (

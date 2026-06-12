@@ -44,11 +44,11 @@ export const getAccessToken = async (): Promise<string> => {
   }
 };
 
-export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string): Promise<any> => {
+export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string, customFilename?: string): Promise<any> => {
   const now = new Date();
   const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
   const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-  const filename = `نسخة_احتياطية_ترانيم_${datePart}_${timePart}.zip`;
+  const filename = customFilename || `نسخة_احتياطية_ترانيم_${datePart}_${timePart}.zip`;
   
   // Use multipart/related for appDataFolder
   const metadata = { 
@@ -77,7 +77,7 @@ export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string): P
 };
 
 export const listBackupsInDrive = async (accessToken: string): Promise<DriveBackupFile[]> => {
-  const q = encodeURIComponent("(name contains 'traneem_backup_' or name contains 'نسخة_احتياطية_ترانيم_') and mimeType = 'application/zip' and trashed = false");
+  const q = encodeURIComponent("(name contains 'traneem_backup' or name contains 'ترانيم') and mimeType = 'application/zip' and trashed = false");
   // Use spaces=appDataFolder
   const url = `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=appDataFolder&orderBy=createdTime+desc&fields=files(id,name,size,createdTime)`;
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
