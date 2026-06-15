@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import MarqueeText from './MarqueeText';
 import { Capacitor } from '@capacitor/core';
 import { 
   Plus, 
@@ -354,9 +355,18 @@ const Sidebar: React.FC<SidebarProps> = ({
               placeholder="بحث عن نشيد..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-2.5 pr-10 pl-4 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4da8ab]/20 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-2.5 pr-10 pl-10 text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4da8ab]/20 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
             />
             <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 group-focus-within:text-[#4da8ab] transition-colors" />
+            
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-slate-300 hover:text-slate-500 dark:text-slate-700 dark:hover:text-slate-500 transition-colors pointer-events-auto"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
           
           <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl">
@@ -521,13 +531,21 @@ const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0 text-right overflow-hidden">
-                      <p className={`font-black text-[13px] leading-tight truncate ${currentId === item.track.id ? 'text-[#4da8ab]' : 'text-slate-800 dark:text-slate-100'}`} dir="rtl">
-                        {item.track.name}
-                      </p>
-                      <p className="text-[10px] opacity-60 font-bold mt-1 truncate dark:text-slate-400" dir="rtl">
-                        {item.track.artist || "بدون فنان"}
-                      </p>
+                    <div className="flex-1 min-w-0 text-right overflow-hidden focus-within:ring-0">
+                      <div className="w-full">
+                        <MarqueeText 
+                          text={item.track.name} 
+                          className={`font-black text-[13px] leading-tight ${currentId === item.track.id ? 'text-[#4da8ab]' : 'text-slate-800 dark:text-slate-100'}`}
+                          speed={30}
+                        />
+                      </div>
+                      <div className="w-full mt-1 opacity-60">
+                        <MarqueeText 
+                          text={item.track.artist || "بدون فنان"} 
+                          className="text-[10px] font-bold dark:text-slate-400"
+                          speed={25}
+                        />
+                      </div>
                     </div>
                   </div>
                   

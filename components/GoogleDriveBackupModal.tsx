@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { 
   getAccessToken,
   uploadBackupToDrive, 
+  updateBackupInDrive,
   listBackupsInDrive, 
   downloadBackupFromDrive, 
   deleteBackupFromDrive, 
@@ -179,6 +180,33 @@ export default function GoogleDriveBackupModal({
     } catch (err: any) {
       console.error(err);
       setBackupStatusMessage(`فشلت استعادة الملف: ${err?.message || 'خطأ غير معروف'}`);
+    } finally {
+      setIsBackupProcessing(false);
+      setActiveActionId(null);
+    }
+  };
+
+  const handleUpdateBackup = async (file: DriveBackupFile) => {
+    const confirmed = window.confirm(
+      `هل أنت متأكد من تحديث النسخة "${file.name}"؟ سيتم استبدالها بالبيانات الحالية.`
+    );
+    if (!confirmed) return;
+    if (!accessToken) {
+      setBackupStatusMessage('انتهت الجلسة. أعد الاتصال بـ Google Drive.');
+      return;
+    }
+
+    setIsBackupProcessing(true);
+    setActiveActionId(file.id);
+    setBackupStatusMessage('جاري تجميع البيانات وتحديث النسخة على Google Drive...');
+    try {
+      const zipBlob = await createBackupZip();
+      await updateBackupInDrive(file.id, zipBlob, accessToken);
+      setBackupStatusMessage('تم تحديث النسخة بنجاح! 🎉');
+      loadBackupList();
+    } catch (err: any) {
+      console.error(err);
+      setBackupStatusMessage(`فشل التحديث: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsBackupProcessing(false);
       setActiveActionId(null);
@@ -688,6 +716,18 @@ export default function GoogleDriveBackupModal({
                                   </svg>
                                 )}
                                 <span>استعادة</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleUpdateBackup(file)}
+                                disabled={activeActionId !== null}
+                                className="px-2 py-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 border border-amber-100 dark:border-amber-950 rounded-lg transition-all flex items-center gap-0.5 active:scale-95 disabled:opacity-40"
+                                title="تحديث هذه النسخة"
+                              >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
+                                </svg>
+                                <span>تحديث</span>
                               </button>
 
                               <button

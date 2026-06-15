@@ -14,6 +14,7 @@ import { Track, Timestamp, PlayerState } from './types';
 import Sidebar from './components/Sidebar';
 import Player from './components/Player';
 import TimestampManager from './components/TimestampManager';
+import MarqueeText from './components/MarqueeText';
 import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import GoogleDriveBackupModal from './components/GoogleDriveBackupModal';
@@ -664,16 +665,31 @@ const App: React.FC = () => {
     handleSelectTrack(nextIndex);
   }, [tracks, currentTrackIndex, handleSelectTrack, shuffleHistory]);
 
+  const sortTracks = (tracks: Track[]) => {
+    return [...tracks].sort((a, b) => {
+      if (a.isFavorite && !b.isFavorite) return -1;
+      if (!a.isFavorite && b.isFavorite) return 1;
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
+  };
+
   const handleSkipToNext = useCallback(() => {
     setCurrentTrackIndex(prevIndex => {
       if (prevIndex !== null && tracks.length > 0) {
-        const nextIndex = (prevIndex + 1) % tracks.length;
-        handleSelectTrack(nextIndex);
-        return nextIndex;
+        const sortedTracks = sortTracks(tracks);
+        const currentTrack = tracks[prevIndex];
+        const currentSortedIndex = sortedTracks.findIndex(t => t.id === currentTrack.id);
+        
+        const nextSortedIndex = (currentSortedIndex + 1) % sortedTracks.length;
+        const nextTrack = sortedTracks[nextSortedIndex];
+        const nextIndexInTracks = tracks.findIndex(t => t.id === nextTrack.id);
+        
+        handleSelectTrack(nextIndexInTracks);
+        return nextIndexInTracks;
       }
       return prevIndex;
     });
-  }, [tracks.length, handleSelectTrack]);
+  }, [tracks, handleSelectTrack]);
 
   const handlePlayPause = async () => {
     const audio = audioRef.current;
@@ -1011,32 +1027,32 @@ const App: React.FC = () => {
     setPlayerState(prev => ({ ...prev, playbackRate: rate }));
   };
 
-  const handleToggleFavorite = () => {
+  const handleToggleFavorite = async () => {
     if (!currentTrack) return;
     const updatedTrack = { ...currentTrack, isFavorite: !currentTrack.isFavorite };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-    saveTrackToDB(updatedTrack);
+    saveTrackToDB(updatedTrack).catch(console.error);
   };
 
-  const handleUpdateName = (e: React.MouseEvent) => {
+  const handleUpdateName = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     if (!currentTrack) return;
     const newName = window.prompt("تعديل اسم الأنشودة:", currentTrack.name);
     if (newName?.trim()) {
       const updatedTrack = { ...currentTrack, name: newName.trim() };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack);
+      saveTrackToDB(updatedTrack).catch(console.error);
     }
   };
 
-  const handleUpdateArtist = (e: React.MouseEvent) => {
+  const handleUpdateArtist = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     if (!currentTrack) return;
     const newArtist = window.prompt("تعديل اسم الفنان:", currentTrack.artist || "");
     if (newArtist !== null) {
       const updatedTrack = { ...currentTrack, artist: newArtist.trim() };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack);
+      saveTrackToDB(updatedTrack).catch(console.error);
     }
   };
 
@@ -1375,14 +1391,26 @@ const App: React.FC = () => {
 
                 <div className="relative z-30 text-center w-full px-4 min-w-0 space-y-3 md:space-y-6">
                   <div className="flex justify-center w-full">
-                    <button onClick={handleUpdateName} className="flex items-center gap-2 group/title hover:bg-[#4da8ab]/10 bg-[#4da8ab]/5 px-5 py-3 rounded-2xl transition-all active:scale-95 cursor-pointer border border-[#4da8ab]/20 dark:border-[#4da8ab]/10 max-w-[90vw] md:max-w-[70vw] lg:max-w-[600px]">
-                      <h1 className="text-xl md:text-3xl lg:text-4xl font-black text-slate-800 dark:text-slate-100 leading-tight truncate group-hover/title:text-[#4da8ab] flex-1">{currentTrack.name}</h1>
+                    <button onClick={handleUpdateName} className="flex items-center gap-2 group/title hover:bg-[#4da8ab]/10 bg-[#4da8ab]/5 px-5 py-3 rounded-2xl transition-all active:scale-95 cursor-pointer border border-[#4da8ab]/20 dark:border-[#4da8ab]/10 max-w-[95vw] md:max-w-[70vw] lg:max-w-[650px] overflow-hidden">
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <MarqueeText 
+                          text={currentTrack.name} 
+                          className="text-xl md:text-3xl lg:text-4xl font-black text-slate-800 dark:text-slate-100 leading-tight group-hover/title:text-[#4da8ab]" 
+                          speed={40}
+                        />
+                      </div>
                       <svg className="w-5 h-5 md:w-6 md:h-6 text-[#4da8ab] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
                   </div>
                   <div className="flex justify-center items-center gap-2 w-full">
-                    <button onClick={handleUpdateArtist} className="flex items-center gap-2 group/artist hover:bg-slate-200 dark:hover:bg-slate-900 bg-slate-100 dark:bg-black border dark:border-slate-800 px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer max-w-[80vw] md:max-w-[50vw]">
-                      <span className={`text-sm md:text-xl font-bold transition-colors group-hover/artist:text-[#4da8ab] truncate ${currentTrack.artist ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 italic'}`}>{currentTrack.artist || "إضافة اسم الفنان..."}</span>
+                    <button onClick={handleUpdateArtist} className="flex items-center gap-2 group/artist hover:bg-slate-200 dark:hover:bg-slate-900 bg-slate-100 dark:bg-black border dark:border-slate-800 px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer max-w-[80vw] md:max-w-[50vw] overflow-hidden">
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <MarqueeText 
+                          text={currentTrack.artist || "إضافة اسم الفنان..."} 
+                          className={`text-sm md:text-xl font-bold transition-colors group-hover/artist:text-[#4da8ab] ${currentTrack.artist ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 italic'}`}
+                          speed={30}
+                        />
+                      </div>
                       <svg className="w-4 h-4 text-slate-400 group-hover/artist:text-[#4da8ab] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
                     <button 
