@@ -57,6 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [view, setView] = useState<'all' | 'record' | 'import'>(defaultView);
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null); 
+  const lastTargetIndex = useRef<number | null>(null);
   const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
 
   // Touch reordering refs & states
@@ -138,82 +139,64 @@ const Sidebar: React.FC<SidebarProps> = ({
     
     const target = e.target as HTMLElement;
     const isHandle = target.closest('.reorder-handle');
-    if (!isHandle && (target.closest('button') || target.closest('.w-44') || target.closest('[role="button"]') || target.closest('.fixed'))) {
-      return;
-    }
+    
+    // Only drag if the touch starts on the handle
+    if (!isHandle) return;
     
     touchStartY.current = e.touches[0].clientY;
     touchStartIndex.current = originalIndex;
-    isLongPressed.current = false;
-
-    if (longPressTimeout.current) {
-      clearTimeout(longPressTimeout.current);
+    isLongPressed.current = true; // Make it immediate
+    
+    setDraggedItemIndex(originalIndex);
+    setActiveTouchDragIndex(originalIndex);
+    
+    if (navigator.vibrate) {
+      try {
+        navigator.vibrate(40);
+      } catch (_) {}
     }
-
-    longPressTimeout.current = window.setTimeout(() => {
-      isLongPressed.current = true;
-      setDraggedItemIndex(originalIndex);
-      setActiveTouchDragIndex(originalIndex);
-      if (navigator.vibrate) {
-        try {
-          navigator.vibrate(40);
-        } catch (_) {}
-      }
-    }, 400);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isRecording || touchStartIndex.current === null) return;
-
-    const currentY = e.touches[0].clientY;
-    const diffY = Math.abs(currentY - touchStartY.current);
-
-    if (!isLongPressed.current && diffY > 10) {
-      if (longPressTimeout.current) {
-        clearTimeout(longPressTimeout.current);
-        longPressTimeout.current = null;
-      }
-      return;
+    if (isRecording || touchStartIndex.current === null || !isLongPressed.current) return;
+    
+    if (e.cancelable) {
+      e.preventDefault();
+      e.stopPropagation();
     }
 
-    if (isLongPressed.current) {
-      if (e.cancelable) {
-        e.preventDefault();
+    const touch = e.touches[0];
+
+    // Scroll logic
+    if (navRef.current) {
+      const { top, bottom } = navRef.current.getBoundingClientRect();
+      const threshold = 60;
+      if (touch.clientY < top + threshold) {
+        startAutoScroll('up');
+      } else if (touch.clientY > bottom - threshold) {
+        startAutoScroll('down');
+      } else {
+        stopAutoScroll();
       }
+    }
 
-      const touch = e.touches[0];
+    // Drop target logic
+    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!targetEl) return;
 
-      // Auto scroll touch logic
-      if (navRef.current) {
-        const { top, bottom } = navRef.current.getBoundingClientRect();
-        const threshold = 60;
-        const y = touch.clientY;
+    let element: HTMLElement | null = targetEl as HTMLElement;
+    let targetIndexStr: string | null = null;
+    while (element && element !== document.body) {
+      targetIndexStr = element.getAttribute('data-index');
+      if (targetIndexStr !== null) break;
+      element = element.parentElement;
+    }
 
-        if (y < top + threshold) {
-          startAutoScroll('up');
-        } else if (y > bottom - threshold) {
-          startAutoScroll('down');
-        } else {
-          stopAutoScroll();
-        }
-      }
-
-      const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (!targetEl) return;
-
-      let element: HTMLElement | null = targetEl as HTMLElement;
-      let targetIndexStr: string | null = null;
-      while (element && element !== document.body) {
-        targetIndexStr = element.getAttribute('data-index');
-        if (targetIndexStr !== null) break;
-        element = element.parentElement;
-      }
-
-      if (targetIndexStr !== null) {
-        const targetIndex = parseInt(targetIndexStr, 10);
-        if (!isNaN(targetIndex) && targetIndex !== touchStartIndex.current) {
-          setDropTargetIndex(targetIndex);
-        }
+    if (targetIndexStr !== null) {
+      const targetIndex = parseInt(targetIndexStr, 10);
+      if (!isNaN(targetIndex) && targetIndex !== touchStartIndex.current && targetIndex !== lastTargetIndex.current) {
+        setDropTargetIndex(targetIndex);
+        lastTargetIndex.current = targetIndex;
       }
     }
   };
@@ -230,6 +213,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
     
     touchStartIndex.current = null;
+    lastTargetIndex.current = null;
     isLongPressed.current = false;
     setDraggedItemIndex(null);
     setActiveTouchDragIndex(null);
