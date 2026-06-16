@@ -16,6 +16,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { Track } from '../types';
+import { normalizeArabic } from '../utils/arabicNormalization';
 
 interface SidebarProps {
   onImport: (file: File, durationOverride?: number, sourceType?: 'record' | 'import') => void;
@@ -87,17 +88,17 @@ const Sidebar: React.FC<SidebarProps> = ({
   const filteredTracksWithIndices = tracks
     .map((track, originalIndex) => ({ track, originalIndex }))
     .filter(item => {
-      const searchLower = searchTerm.toLowerCase().trim();
-      if (!searchLower) return (view === 'all' || 
+      const normalizedSearch = normalizeArabic(searchTerm);
+      if (!normalizedSearch) return (view === 'all' || 
                          (view === 'record' && item.track.sourceType === 'record') ||
                          (view === 'import' && (item.track.sourceType === 'import' || !item.track.sourceType)));
                          
-      const searchWords = searchLower.split(/\s+/);
-      const trackNameLower = item.track.name.toLowerCase();
-      const trackArtistLower = (item.track.artist || "").toLowerCase();
+      const searchWords = normalizedSearch.split(/\s+/);
+      const trackNameNormalized = normalizeArabic(item.track.name);
+      const trackArtistNormalized = normalizeArabic(item.track.artist || "");
       
       const matchesSearch = searchWords.every(word => 
-        trackNameLower.includes(word) || trackArtistLower.includes(word)
+        trackNameNormalized.includes(word) || trackArtistNormalized.includes(word)
       );
       
       const matchesType = view === 'all' || 
