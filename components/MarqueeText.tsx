@@ -26,7 +26,7 @@ const MarqueeText: React.FC<MarqueeTextProps> = ({
         const containerWidth = containerRef.current.offsetWidth;
         const textWidth = measureRef.current.offsetWidth;
         // Scroll only if it really overflows
-        const needsScroll = textWidth > containerWidth - 4;
+        const needsScroll = textWidth > containerWidth + 20;
         setContentWidth(textWidth);
         setShouldScroll(needsScroll);
       }

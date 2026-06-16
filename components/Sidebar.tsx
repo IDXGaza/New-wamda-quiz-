@@ -39,6 +39,15 @@ interface SidebarProps {
   onOpenBackup?: () => void;
 }
 
+const DropPlaceholder = () => (
+  <motion.div 
+    initial={{ opacity: 0, height: 0 }}
+    animate={{ opacity: 1, height: 6 }}
+    exit={{ opacity: 0, height: 0 }}
+    className="bg-[#4da8ab] rounded-full w-full my-1.5 shadow-[0_0_12px_rgba(77,168,171,0.5)]" 
+  />
+);
+
 const Sidebar: React.FC<SidebarProps> = ({ 
   onImport, onRemove, onMove, onReorderEnd, onToggleSourceType, defaultView, setDefaultView, tracks, currentId, onSelect, onPlayRandom, isOpen = false, onClose,
   isRecording, onStartRecording, showBackupReminder, onOpenBackup, className
@@ -46,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'all' | 'record' | 'import'>(defaultView);
   const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null); 
   const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
 
   // Touch reordering refs & states
@@ -201,12 +210,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       if (targetIndexStr !== null) {
         const targetIndex = parseInt(targetIndexStr, 10);
-        const sourceIndex = touchStartIndex.current;
-        if (targetIndex !== sourceIndex && !isNaN(targetIndex)) {
-          onMove(sourceIndex, targetIndex);
-          touchStartIndex.current = targetIndex;
-          setDraggedItemIndex(targetIndex);
-          setActiveTouchDragIndex(targetIndex);
+        if (!isNaN(targetIndex) && targetIndex !== touchStartIndex.current) {
+          setDropTargetIndex(targetIndex);
         }
       }
     }
@@ -219,22 +224,22 @@ const Sidebar: React.FC<SidebarProps> = ({
       longPressTimeout.current = null;
     }
 
-    if (isLongPressed.current) {
-      e.preventDefault();
-      e.stopPropagation();
+    if (isLongPressed.current && touchStartIndex.current !== null && dropTargetIndex !== null) {
+      onMove(touchStartIndex.current, dropTargetIndex);
     }
-
+    
     touchStartIndex.current = null;
     isLongPressed.current = false;
     setDraggedItemIndex(null);
     setActiveTouchDragIndex(null);
+    setDropTargetIndex(null);
     if (onReorderEnd) onReorderEnd();
   };
 
   const onDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (draggedItemIndex !== null && draggedItemIndex !== index) {
-      setDragOverIndex(index);
+      setDropTargetIndex(index);
     }
     if (!navRef.current) return;
 
@@ -258,13 +263,13 @@ const Sidebar: React.FC<SidebarProps> = ({
       onMove(draggedItemIndex, index);
     }
     setDraggedItemIndex(null);
-    setDragOverIndex(null);
+    setDropTargetIndex(null);
   };
 
   const onDragEnd = () => {
     stopAutoScroll();
     setDraggedItemIndex(null);
-    setDragOverIndex(null);
+    setDropTargetIndex(null);
     if (onReorderEnd) onReorderEnd();
   };
 
@@ -434,12 +439,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             ) : (
               filteredTracksWithIndices.map((item) => (
                 <React.Fragment key={item.track.id}>
-                  {dragOverIndex === item.originalIndex && draggedItemIndex !== null && draggedItemIndex > item.originalIndex && (
-                    <motion.div 
-                      initial={{ opacity: 0, scaleY: 0 }}
-                      animate={{ opacity: 1, scaleY: 1 }}
-                      className="h-1 bg-blue-500 dark:bg-blue-400 rounded-full my-1 select-none pointer-events-none shadow-[0_0_8px_rgba(59,130,246,0.5)] origin-top" 
-                    />
+                  {dropTargetIndex === item.originalIndex && draggedItemIndex !== null && draggedItemIndex > item.originalIndex && (
+                    <DropPlaceholder />
                   )}
                   <div 
                     draggable
@@ -559,12 +560,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-                {dragOverIndex === item.originalIndex && draggedItemIndex !== null && draggedItemIndex < item.originalIndex && (
-                  <motion.div 
-                    initial={{ opacity: 0, scaleY: 0 }}
-                    animate={{ opacity: 1, scaleY: 1 }}
-                    className="h-1 bg-blue-500 dark:bg-blue-400 rounded-full my-1 select-none pointer-events-none shadow-[0_0_8px_rgba(59,130,246,0.5)] origin-bottom" 
-                  />
+                {dropTargetIndex === item.originalIndex && draggedItemIndex !== null && draggedItemIndex < item.originalIndex && (
+                  <DropPlaceholder />
                 )}
               </React.Fragment>
             ))
