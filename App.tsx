@@ -116,6 +116,21 @@ const getAllTracksFromDB = async (): Promise<any[]> => {
   }
 };
 
+const getTrackFromDB = async (id: string): Promise<any> => {
+  try {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const request = tx.objectStore(STORE_NAME).get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(tx.error);
+    });
+  } catch (error) {
+    console.error("IndexedDB get error:", error);
+    return null;
+  }
+};
+
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
@@ -184,35 +199,118 @@ const App: React.FC = () => {
     setShowBackupReminder(false);
   };
 
+const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0.65): Promise<Blob> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(img.src);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(blob);
+        return;
+      }
+      let w = img.width;
+      let h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((resultBlob) => {
+        resolve(resultBlob || blob);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => {
+      resolve(blob);
+    };
+  });
+};
+
   const [backupCancelSignal, setBackupCancelSignal] = useState(false);
 
-  const createBackupZipBlob = async (): Promise<Blob> => {
+  const createBackupZipBlob = async (
+    metadataOnly: boolean = false, 
+    excludedTrackIds: string[] = [], 
+    compressCovers: boolean = true
+  ): Promise<Blob> => {
     setIsBackupProcessing(true);
     setBackupStatusMessage('⏳ جاري جلب البيانات من الذاكرة...');
     setBackupCancelSignal(false);
     try {
       const allTracks = await getAllTracksFromDB();
+      // Filter out excluded tracks
+      const filteredTracks = allTracks.filter(t => !excludedTrackIds.includes(t.id));
       const files: any = {};
       
+      // Map to deduplicate audio files using size + hash of first 1KB
+      const fileKeyToPathMap = new Map<string, string>();
+      
       // Parallelize processing to maximize speed
-      await Promise.all(allTracks.map(async (t, i) => {
+      await Promise.all(filteredTracks.map(async (t, i) => {
         if (backupCancelSignal) throw new Error('العملية ألغيت');
         
         const trackMetadata = { ...t };
         
         // Progress reporting (every 5 tracks to avoid UI lag)
-        if (i % 5 === 0 || i === allTracks.length - 1) {
-          setBackupStatusMessage(`📦 تجهيز: ${t.name} (${i + 1}/${allTracks.length})`);
+        if (i % 5 === 0 || i === filteredTracks.length - 1) {
+          setBackupStatusMessage(`📦 تجهيز: ${t.name} (${i + 1}/${filteredTracks.length})`);
         }
 
-        if (t.fileBlob) {
-          const buf = await t.fileBlob.arrayBuffer();
-          // MP3 is already compressed, store without compression for max speed
-          files[`audio/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
-          trackMetadata.fileBlobPath = `audio/${t.id}.blob`;
+        if (!metadataOnly && t.fileBlob) {
+          // Calculate quick hash from size and first 1KB
+          const size = t.fileBlob.size;
+          const slice = t.fileBlob.slice(0, 1024);
+          const sliceBuf = await slice.arrayBuffer();
+          const arr = new Uint8Array(sliceBuf);
+          let hash = 0;
+          for (let j = 0; j < arr.length; j++) {
+            hash = (hash << 5) - hash + arr[j];
+            hash |= 0;
+          }
+          const fileKey = `${size}_${hash}`;
+
+          if (fileKeyToPathMap.has(fileKey)) {
+            // Deduplicate! Reuse existing file path in zip
+            const existingPath = fileKeyToPathMap.get(fileKey)!;
+            trackMetadata.fileBlobPath = existingPath;
+          } else {
+            const buf = await t.fileBlob.arrayBuffer();
+            // MP3/M4A/WebM is already compressed, store without compression for max speed
+            // But if it is a WAV file, we compress it (lossless deflate) to save massive space!
+            const isWav = t.fileBlob.name?.toLowerCase().endsWith('.wav') || 
+                          t.fileBlob.type === 'audio/wav' || 
+                          t.fileBlob.type === 'audio/x-wav';
+            const level = isWav ? 6 : 0;
+            const path = `audio/${t.id}.blob`;
+            
+            files[path] = [new Uint8Array(buf), { level }];
+            trackMetadata.fileBlobPath = path;
+            fileKeyToPathMap.set(fileKey, path);
+          }
         }
-        if (t.coverBlob) {
-          const buf = await t.coverBlob.arrayBuffer();
+        
+        if (!metadataOnly && t.coverBlob) {
+          let processedCover = t.coverBlob;
+          if (compressCovers) {
+            try {
+              if (i % 3 === 0) {
+                setBackupStatusMessage(`⚙️ جاري ضغط الغلاف لـ: ${t.name}`);
+              }
+              processedCover = await compressImageBlob(t.coverBlob, 250, 0.65);
+            } catch (err) {
+              console.error("Cover compression failed:", t.name, err);
+            }
+          }
+          const buf = await processedCover.arrayBuffer();
           // Images are compressed, store without compression
           files[`covers/${t.id}.blob`] = [new Uint8Array(buf), { level: 0 }];
           trackMetadata.coverBlobPath = `covers/${t.id}.blob`;
@@ -223,13 +321,13 @@ const App: React.FC = () => {
         delete trackMetadata.url;
         delete trackMetadata.coverUrl;
         
-        allTracks[i] = trackMetadata;
+        filteredTracks[i] = trackMetadata;
       }));
 
       if (backupCancelSignal) throw new Error('العملية ألغيت');
 
       // metadata.json is text, compress it maximum to keep ZIP size down
-      files["metadata.json"] = [fflate.strToU8(JSON.stringify(allTracks)), { level: 9 }];
+      files["metadata.json"] = [fflate.strToU8(JSON.stringify(filteredTracks)), { level: 9 }];
       
       setBackupStatusMessage('⚡ جاري الحفظ النهائي (سرعة قصوى)...');
       return new Promise((resolve, reject) => {
@@ -271,14 +369,29 @@ const App: React.FC = () => {
       // Optimization: Parallel save to DB
       await Promise.all(metadata.map(async (t: any) => {
         const trackToSave = { ...t };
+        
+        // Fetch existing track to preserve blob if the ZIP does not contain it (e.g., metadata-only backup)
+        let existingTrack: any = null;
+        try {
+          existingTrack = await getTrackFromDB(t.id);
+        } catch (_) {}
+
         if (t.fileBlobPath && decompressed[t.fileBlobPath]) {
           trackToSave.fileBlob = new Blob([decompressed[t.fileBlobPath]] as any);
           delete trackToSave.fileBlobPath;
+        } else if (existingTrack && existingTrack.fileBlob) {
+          trackToSave.fileBlob = existingTrack.fileBlob;
+          delete trackToSave.fileBlobPath;
         }
+
         if (t.coverBlobPath && decompressed[t.coverBlobPath]) {
           trackToSave.coverBlob = new Blob([decompressed[t.coverBlobPath]] as any);
           delete trackToSave.coverBlobPath;
+        } else if (existingTrack && existingTrack.coverBlob) {
+          trackToSave.coverBlob = existingTrack.coverBlob;
+          delete trackToSave.coverBlobPath;
         }
+
         trackToSave.sourceType = 'import';
         await saveTrackToDB(trackToSave);
       }));
@@ -1420,7 +1533,7 @@ const App: React.FC = () => {
                     </button>
                   </div>
                   <div className="flex justify-center items-center gap-2 w-full">
-                    <button onClick={() => handleOpenEditModal(currentTrack)} className="flex items-center gap-2 group/artist hover:bg-slate-200 dark:hover:bg-slate-900 bg-slate-100 dark:bg-black border dark:border-slate-800 px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer max-w-[80vw] md:max-w-[50vw] overflow-hidden">
+                    <button onClick={() => handleOpenEditModal(currentTrack, 'artist')} className="flex items-center gap-2 group/artist hover:bg-slate-200 dark:hover:bg-slate-900 bg-slate-100 dark:bg-black border dark:border-slate-800 px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer max-w-[80vw] md:max-w-[50vw] overflow-hidden">
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <MarqueeText 
                           text={currentTrack.artist || "إضافة اسم الفنان..."} 

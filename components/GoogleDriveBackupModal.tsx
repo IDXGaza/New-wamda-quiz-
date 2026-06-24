@@ -15,7 +15,7 @@ import StatsWidget from './StatsWidget';
 interface GoogleDriveBackupModalProps {
   isOpen: boolean;
   onClose: () => void;
-  createBackupZip: () => Promise<Blob>;
+  createBackupZip: (metadataOnly?: boolean, excludedTrackIds?: string[], compressCovers?: boolean) => Promise<Blob>;
   restoreBackupZip: (blob: Blob) => Promise<void>;
   isBackupProcessing: boolean;
   setIsBackupProcessing: (val: boolean) => void;
@@ -44,6 +44,13 @@ export default function GoogleDriveBackupModal({
   const [backups, setBackups] = useState<DriveBackupFile[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const [backupType, setBackupType] = useState<'full' | 'metadata'>('full');
+  
+  // Size reduction states
+  const [compressCovers, setCompressCovers] = useState<boolean>(true);
+  const [excludedTrackIds, setExcludedTrackIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState<boolean>(false);
 
   const [tempBlob, setTempBlob] = useState<Blob | null>(null);
   const [preparedName, setPreparedName] = useState('');
@@ -119,14 +126,14 @@ export default function GoogleDriveBackupModal({
       return;
     }
     setIsBackupProcessing(true);
-    setBackupStatusMessage('جاري تجميع وضغط البيانات الصوتية (ZIP)...');
+    setBackupStatusMessage(backupType === 'metadata' ? 'جاري تجميع معلومات الأناشيد (ZIP)...' : 'جاري تجميع وضغط البيانات الصوتية (ZIP)...');
     try {
-      const zipBlob = await createBackupZip();
+      const zipBlob = await createBackupZip(backupType === 'metadata', excludedTrackIds, compressCovers);
       
       const now = new Date();
       const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
       const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-      const defaultName = `نسخة_ترانيم_${datePart}_${timePart}`;
+      const defaultName = backupType === 'metadata' ? `معلومات_ترانيم_${datePart}_${timePart}` : `نسخة_ترانيم_${datePart}_${timePart}`;
       
       setTempBlob(zipBlob);
       setPreparedName(defaultName);
@@ -200,7 +207,7 @@ export default function GoogleDriveBackupModal({
     setActiveActionId(file.id);
     setBackupStatusMessage('جاري تجميع البيانات وتحديث النسخة على Google Drive...');
     try {
-      const zipBlob = await createBackupZip();
+      const zipBlob = await createBackupZip(backupType === 'metadata', excludedTrackIds, compressCovers);
       await updateBackupInDrive(file.id, zipBlob, accessToken);
       setBackupStatusMessage('تم تحديث النسخة بنجاح! 🎉');
       loadBackupList();
@@ -246,14 +253,14 @@ export default function GoogleDriveBackupModal({
       return;
     }
     setIsBackupProcessing(true);
-    setBackupStatusMessage('جاري تجهيز النسخة الاحتياطية (ZIP)...');
+    setBackupStatusMessage(backupType === 'metadata' ? 'جاري تجهيز نسخة المعلومات الاحتياطية (ZIP)...' : 'جاري تجهيز النسخة الاحتياطية الكاملة (ZIP)...');
     try {
-      const zipBlob = await createBackupZip();
+      const zipBlob = await createBackupZip(backupType === 'metadata', excludedTrackIds, compressCovers);
       
       const now = new Date();
       const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
       const timePart = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
-      const defaultName = `نسخة_احتياطية_ترانيم_${datePart}_${timePart}`;
+      const defaultName = backupType === 'metadata' ? `معلومات_ترانيم_${datePart}_${timePart}` : `نسخة_احتياطية_ترانيم_${datePart}_${timePart}`;
       
       setTempBlob(zipBlob);
       setPreparedName(defaultName);
@@ -437,6 +444,223 @@ export default function GoogleDriveBackupModal({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
           <StatsWidget tracks={tracks} />
+
+          {/* نوع النسخ الاحتياطي */}
+          <div className="space-y-2.5 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-3xl border border-slate-100 dark:border-slate-800/60">
+            <label className="text-xs font-black tracking-wider text-slate-500 dark:text-slate-400">نوع النسخة الاحتياطية المطلوبة:</label>
+            <div className="bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl flex border border-slate-200/50 dark:border-slate-800">
+              <button 
+                type="button"
+                onClick={() => setBackupType('full')}
+                className={`flex-1 py-2 px-3 text-[11px] font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  backupType === 'full' 
+                  ? 'bg-white dark:bg-slate-800 text-[#4da8ab] shadow-sm border border-slate-200/40 dark:border-slate-700' 
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <span>📦 نسخة كاملة (مع الملفات)</span>
+              </button>
+              <button 
+                type="button"
+                onClick={() => setBackupType('metadata')}
+                className={`flex-1 py-2 px-3 text-[11px] font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  backupType === 'metadata' 
+                  ? 'bg-white dark:bg-slate-800 text-[#4da8ab] shadow-sm border border-slate-200/40 dark:border-slate-700' 
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                <span>⚡ خفيفة (المعلومات والترتيب)</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed px-1">
+              {backupType === 'full' 
+                ? '• تشمل كافة ملفات الأناشيد الصوتية والأغلفة وعلامات التوقف. حجمها كبير (مثال: 800 ميجابايت) وتتطلب وقت أطول للرفع والتصدير.'
+                : '• تشمل أسماء الأناشيد والمنشدين والترتيب والمفضلة وعلامات التوقف (بدون الصوتيات نفسها). حجمها ضئيل جداً (أقل من 1MB) وتكتمل بلمحة بصر.'}
+            </p>
+          </div>
+
+          {/* خيارات تقليل الحجم والتحكم في النسخة الاحتياطية */}
+          {backupType === 'full' && (
+            <div className="space-y-4">
+              {/* ضغط الأغلفة */}
+              <div className="flex items-start gap-3 bg-slate-50/50 dark:bg-slate-950/20 p-4 rounded-3xl border border-slate-100 dark:border-slate-800/60 transition-all hover:bg-slate-100/50 dark:hover:bg-slate-950/30">
+                <input
+                  type="checkbox"
+                  id="compressCovers"
+                  checked={compressCovers}
+                  onChange={(e) => setCompressCovers(e.target.checked)}
+                  className="mt-1 accent-[#4da8ab] rounded border-slate-300 focus:ring-[#4da8ab] h-4 w-4 cursor-pointer"
+                />
+                <div className="space-y-1">
+                  <label htmlFor="compressCovers" className="text-xs font-black text-slate-700 dark:text-slate-300 cursor-pointer flex items-center gap-1.5">
+                    <span>⚡ ضغط الأغلفة تلقائياً (يوفر مساحة هائلة!)</span>
+                    <span className="bg-emerald-500/10 text-emerald-500 text-[9px] font-black px-1.5 py-0.5 rounded-full border border-emerald-500/15">موصى به</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed">
+                    سيقوم النظام بتصغير صور الأغلفة العالية الدقة إلى حجم 250px وصيغة مضغوطة ذكياً. هذا يوفر ما يصل إلى 80% من مساحة الصور دون تدهور الجودة باللاعب.
+                  </p>
+                </div>
+              </div>
+
+              {/* استثناء الأناشيد وتخصيص النسخة */}
+              <div className="bg-slate-50/50 dark:bg-slate-950/20 rounded-3xl border border-slate-100 dark:border-slate-800/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomizeOpen(!isCustomizeOpen)}
+                  className="w-full flex items-center justify-between p-4 text-xs font-black text-slate-700 dark:text-slate-300 hover:bg-slate-100/50 dark:hover:bg-slate-950/30 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>🎯 استبعاد أناشيد لتقليص الحجم</span>
+                    <span className="bg-[#4da8ab]/10 text-[#4da8ab] text-[10px] font-black px-2 py-0.5 rounded-full border border-[#4da8ab]/15">
+                      {excludedTrackIds.length > 0 ? `تم استبعاد ${excludedTrackIds.length}` : 'كامل الأناشيد'}
+                    </span>
+                  </div>
+                  <svg
+                    className={`w-4 h-4 text-slate-400 transition-transform duration-300 ${isCustomizeOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {isCustomizeOpen && (
+                  <div className="p-4 pt-0 border-t border-slate-100 dark:border-slate-800/40 space-y-3 mt-2">
+                    {/* شريط البحث وتصفية المفضلة */}
+                    <div className="flex flex-col gap-2">
+                      <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center px-3 py-1.5 focus-within:ring-2 focus-within:ring-[#4da8ab]/30 transition-all">
+                        <svg className="w-3.5 h-3.5 text-slate-400 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <input
+                          type="text"
+                          dir="rtl"
+                          placeholder="ابحث بالاسم أو المنشد لاستبعاده..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full bg-transparent text-[11px] font-bold text-slate-800 dark:text-slate-100 outline-none"
+                        />
+                        {searchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* أزرار سريعة للتحديد والاستبعاد */}
+                      <div className="flex gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setExcludedTrackIds([])}
+                          className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                        >
+                          📦 تحديد الكل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExcludedTrackIds(tracks.map(t => t.id))}
+                          className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-[10px] font-black text-slate-600 dark:text-slate-400 px-2.5 py-1 rounded-xl transition-all cursor-pointer"
+                        >
+                          ❌ إلغاء الكل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nonFavs = tracks.filter(t => !t.isFavorite).map(t => t.id);
+                            setExcludedTrackIds(nonFavs);
+                          }}
+                          className="bg-pink-50 hover:bg-pink-100 dark:bg-pink-950/20 dark:hover:bg-pink-950/35 text-[10px] font-black text-pink-600 dark:text-pink-400 px-2.5 py-1 rounded-xl transition-all border border-pink-100 dark:border-pink-900/30 cursor-pointer"
+                        >
+                          ❤️ المفضلة فقط (توفير فائق)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* قائمة الأناشيد مع الأحجام */}
+                    <div className="max-h-60 overflow-y-auto border border-slate-100 dark:border-slate-800/40 rounded-2xl bg-white dark:bg-slate-950 divide-y divide-slate-50 dark:divide-slate-900/60 scrollbar-thin">
+                      {tracks
+                        .filter(t => {
+                          if (!searchQuery) return true;
+                          const nameMatch = t.name?.toLowerCase().includes(searchQuery.toLowerCase());
+                          const artistMatch = t.artist?.toLowerCase().includes(searchQuery.toLowerCase());
+                          return nameMatch || artistMatch;
+                        })
+                        .map(t => {
+                          const isExcluded = excludedTrackIds.includes(t.id);
+                          const isWav = t.name?.toLowerCase().endsWith('.wav') || 
+                                        ((t.fileBlob as any)?.name as string)?.toLowerCase().endsWith('.wav') || 
+                                        t.fileBlob?.type === 'audio/wav' || 
+                                        t.fileBlob?.type === 'audio/x-wav';
+                          const sizeMB = t.fileBlob ? (t.fileBlob.size / (1024 * 1024)).toFixed(1) : '0.0';
+                          
+                          return (
+                            <div 
+                              key={t.id} 
+                              onClick={() => {
+                                if (isExcluded) {
+                                  setExcludedTrackIds(prev => prev.filter(id => id !== t.id));
+                                } else {
+                                  setExcludedTrackIds(prev => [...prev, t.id]);
+                                }
+                              }}
+                              className={`flex items-center justify-between p-2.5 hover:bg-slate-50/70 dark:hover:bg-slate-900/30 transition-all cursor-pointer ${isExcluded ? 'opacity-50' : ''}`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  readOnly
+                                  className="accent-[#4da8ab] rounded border-slate-300 focus:ring-[#4da8ab] h-3.5 w-3.5"
+                                />
+                                <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800 flex-shrink-0">
+                                  <img 
+                                    src={t.coverUrl} 
+                                    alt="" 
+                                    className="w-full h-full object-cover" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-black text-slate-800 dark:text-slate-200 truncate">{t.name}</div>
+                                  <div className="text-[9px] font-bold text-slate-400 dark:text-slate-500 truncate">{t.artist}</div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-shrink-0 mr-2">
+                                {isWav && (
+                                  <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
+                                    🚨 WAV غير مضغوط
+                                  </span>
+                                )}
+                                <span className={`text-[10px] font-black ${parseFloat(sizeMB) > 15 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                  {sizeMB} MB
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      {tracks.length === 0 && (
+                        <div className="p-4 text-center text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                          لا توجد أناشيد متاحة للتخصيص.
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed px-1">
+                      • فكرة ذكية: يمكنك استبعاد الأناشيد ذات الحجم الكبير جداً (الملونة بالأحمر) أو غير المهمة لتقليل حجم النسخة الاحتياطية بنسبة تصل إلى 90%.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {backupStatusMessage && (
             <div className={`p-3.5 text-xs text-center font-bold rounded-2xl flex flex-col items-center justify-center gap-2 border transition-all duration-500 ${

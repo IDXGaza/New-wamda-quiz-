@@ -151,28 +151,25 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
         const rawBlob = new Blob(audioChunksRef.current, { type: recordedMimeType });
         const date = new Date();
         const dateStr = `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-        const defaultDuration = recordingTimeRef.current;
+        let duration = recordingTimeRef.current;
         
         try {
+          // Fast decode just to get the exact duration
           const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
           const arrayBuffer = await rawBlob.arrayBuffer();
           const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-          
-          // @ts-ignore
-          const toWav = (await import('audiobuffer-to-wav')).default;
-          const wavBuffer = toWav(audioBuffer);
-          const wavBlob = new Blob([new DataView(wavBuffer)], { type: 'audio/wav' });
-          const file = new File([wavBlob], `تسجيل صوتي - ${dateStr}.wav`, { type: 'audio/wav' });
-          onImport(file, audioBuffer.duration);
+          duration = audioBuffer.duration;
         } catch (err) {
-          console.error("Audio conversion failed, falling back to original blob", err);
-          let extension = 'webm';
-          if (recordedMimeType.includes('mp4')) extension = 'mp4';
-          else if (recordedMimeType.includes('ogg')) extension = 'ogg';
-          
-          const file = new File([rawBlob], `تسجيل صوتي - ${dateStr}.${extension}`, { type: recordedMimeType });
-          onImport(file, defaultDuration);
+          console.warn("Could not decode audio duration via Web Audio, using elapsed timer", err);
         }
+
+        let extension = 'webm';
+        if (recordedMimeType.includes('mp4') || recordedMimeType.includes('m4a')) extension = 'm4a';
+        else if (recordedMimeType.includes('ogg')) extension = 'ogg';
+        else if (recordedMimeType.includes('aac')) extension = 'aac';
+        
+        const file = new File([rawBlob], `تسجيل صوتي - ${dateStr}.${extension}`, { type: recordedMimeType });
+        onImport(file, duration);
 
         stream.getTracks().forEach(track => track.stop()); // Stop microphone
         setIsRecording(false);
