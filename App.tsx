@@ -19,6 +19,7 @@ import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import GoogleDriveBackupModal from './components/GoogleDriveBackupModal';
 import ImageCropperModal from './components/ImageCropperModal';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Removed cloud functions syncTrackToCloud and syncDeleteTrackToCloud
 
@@ -135,6 +136,12 @@ const App: React.FC = () => {
   const [shuffleHistory, setShuffleHistory] = useState<number[]>([]);
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
   const lastStatsUpdateRef = useRef<number>(0);
+
+  // Metadata editing state
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editArtist, setEditArtist] = useState('');
+  const [editMode, setEditMode] = useState<'name' | 'artist'>('name');
 
 
 
@@ -1034,26 +1041,31 @@ const App: React.FC = () => {
     saveTrackToDB(updatedTrack).catch(console.error);
   };
 
-  const handleUpdateName = async (e: React.MouseEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    if (!currentTrack) return;
-    const newName = window.prompt("تعديل اسم الأنشودة:", currentTrack.name);
-    if (newName?.trim()) {
-      const updatedTrack = { ...currentTrack, name: newName.trim() };
-      setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack).catch(console.error);
-    }
+  const handleOpenEditModal = (track: Track, mode: 'name' | 'artist' = 'name') => {
+    setEditingTrack(track);
+    setEditName(track.name);
+    setEditArtist(track.artist || "");
+    setEditMode(mode);
   };
 
-  const handleUpdateArtist = async (e: React.MouseEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    if (!currentTrack) return;
-    const newArtist = window.prompt("تعديل اسم الفنان:", currentTrack.artist || "");
-    if (newArtist !== null) {
-      const updatedTrack = { ...currentTrack, artist: newArtist.trim() };
-      setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
-      saveTrackToDB(updatedTrack).catch(console.error);
+  const handleSaveMetadata = async () => {
+    if (!editingTrack) return;
+    
+    let updatedTrack = { ...editingTrack };
+    if (editMode === 'name') {
+      const trimmedName = editName.trim();
+      if (!trimmedName) {
+        alert("يجب إدخال اسم الأنشودة");
+        return;
+      }
+      updatedTrack.name = trimmedName;
+    } else {
+      updatedTrack.artist = editArtist.trim();
     }
+    
+    setTracks(prev => prev.map(t => t.id === editingTrack.id ? updatedTrack : t));
+    saveTrackToDB(updatedTrack).catch(console.error);
+    setEditingTrack(null);
   };
 
   const handleUpdateCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1128,7 +1140,9 @@ const App: React.FC = () => {
 
     // Save to local DB
     try {
+      console.log("Saving track to DB:", newTrack.id);
       await saveTrackToDB(newTrack);
+      console.log("Save track successful:", newTrack.id);
     } catch (error) {
       console.error("Failed to save track to local DB:", error);
     }
@@ -1136,7 +1150,9 @@ const App: React.FC = () => {
 
   const removeTrack = async (id: string) => {
     try {
+      console.log("Deleting track from DB:", id);
       await deleteTrackFromDB(id);
+      console.log("Delete track successful:", id);
     } catch (error) {
       console.error("Failed to delete track:", error);
     }
@@ -1171,11 +1187,11 @@ const App: React.FC = () => {
   const handleReorderEnd = async () => {
     // Persistence
     try {
-      // Need tracks from latest state - using functional state update is tricky for side effects
-      // but we can just use the tracks from the current render cycle
+      console.log("Saving all tracks after reorder:", tracks.length);
       for (const track of tracks) {
         await saveTrackToDB(track);
       }
+      console.log("All tracks saved successfully after reorder");
     } catch (error) {
       console.error("Failed to save reordered tracks:", error);
     }
@@ -1362,6 +1378,7 @@ const App: React.FC = () => {
               isRecording={isRecording} onStartRecording={handleStartRecording}
               showBackupReminder={showBackupReminder}
               onOpenBackup={() => setIsDriveModalOpen(true)}
+              onEditTrack={handleOpenEditModal}
               className="fixed inset-y-0 right-0 h-full w-[85%] sm:w-[400px] shadow-2xl z-[200] lg:!relative lg:!w-full lg:!shadow-none lg:!z-10 lg:!inset-auto"
             />
           </div>
@@ -1391,7 +1408,7 @@ const App: React.FC = () => {
 
                 <div className="relative z-30 text-center w-full px-4 min-w-0 space-y-3 md:space-y-6">
                   <div className="flex justify-center w-full">
-                    <button onClick={handleUpdateName} className="flex items-center gap-2 group/title hover:bg-[#4da8ab]/10 bg-[#4da8ab]/5 px-5 py-3 rounded-2xl transition-all active:scale-95 cursor-pointer border border-[#4da8ab]/20 dark:border-[#4da8ab]/10 max-w-[95vw] md:max-w-[70vw] lg:max-w-[650px] overflow-hidden">
+                    <button onClick={() => handleOpenEditModal(currentTrack)} className="flex items-center gap-2 group/title hover:bg-[#4da8ab]/10 bg-[#4da8ab]/5 px-5 py-3 rounded-2xl transition-all active:scale-95 cursor-pointer border border-[#4da8ab]/20 dark:border-[#4da8ab]/10 max-w-[95vw] md:max-w-[70vw] lg:max-w-[650px] overflow-hidden">
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <MarqueeText 
                           text={currentTrack.name} 
@@ -1403,7 +1420,7 @@ const App: React.FC = () => {
                     </button>
                   </div>
                   <div className="flex justify-center items-center gap-2 w-full">
-                    <button onClick={handleUpdateArtist} className="flex items-center gap-2 group/artist hover:bg-slate-200 dark:hover:bg-slate-900 bg-slate-100 dark:bg-black border dark:border-slate-800 px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer max-w-[80vw] md:max-w-[50vw] overflow-hidden">
+                    <button onClick={() => handleOpenEditModal(currentTrack)} className="flex items-center gap-2 group/artist hover:bg-slate-200 dark:hover:bg-slate-900 bg-slate-100 dark:bg-black border dark:border-slate-800 px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer max-w-[80vw] md:max-w-[50vw] overflow-hidden">
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <MarqueeText 
                           text={currentTrack.artist || "إضافة اسم الفنان..."} 
@@ -1486,6 +1503,86 @@ const App: React.FC = () => {
           onCropComplete={handleCropComplete}
         />
       )}
+
+      <AnimatePresence>
+        {editingTrack && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingTrack(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
+            
+            {/* Modal Container */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white dark:bg-slate-900 rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl border border-slate-100 dark:border-slate-800 relative z-10 flex flex-col space-y-6 text-right"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                <button 
+                  onClick={() => setEditingTrack(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <h3 className="text-lg md:text-xl font-black text-slate-800 dark:text-slate-100">
+                  {editMode === 'name' ? 'تعديل اسم الأنشودة' : 'تعديل اسم الفنان'}
+                </h3>
+              </div>
+
+              <div className="space-y-4">
+                {editMode === 'name' ? (
+                  <div className="flex flex-col space-y-2">
+                    <label className="text-xs font-black text-slate-400">اسم القصيدة / الأنشودة</label>
+                    <input 
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="أدخل اسم الأنشودة"
+                      dir="rtl"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-2xl py-3 px-4 text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4da8ab]/40 transition-all"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col space-y-2">
+                    <label className="text-xs font-black text-slate-400">اسم الرادود / الفنان</label>
+                    <input 
+                      type="text"
+                      value={editArtist}
+                      onChange={(e) => setEditArtist(e.target.value)}
+                      placeholder="أدخل اسم الرادود"
+                      dir="rtl"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-2xl py-3 px-4 text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#4da8ab]/40 transition-all"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  onClick={handleSaveMetadata}
+                  className="flex-1 py-3 bg-[#4da8ab] hover:bg-[#3d8c8e] text-white font-black rounded-2xl shadow-lg transition-all active:scale-[0.98] text-sm"
+                >
+                  حفظ التغييرات
+                </button>
+                <button 
+                  onClick={() => setEditingTrack(null)}
+                  className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-black rounded-2xl transition-all active:scale-[0.98] text-sm"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
