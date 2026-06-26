@@ -19,6 +19,7 @@ import RecordingScreen from './components/RecordingScreen';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import GoogleDriveBackupModal from './components/GoogleDriveBackupModal';
 import ImageCropperModal from './components/ImageCropperModal';
+import { ShareTrackModal } from './components/ShareTrackModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Removed cloud functions syncTrackToCloud and syncDeleteTrackToCloud
@@ -28,7 +29,11 @@ const UNIFORM_PLACEHOLDER = "https://images.unsplash.com/photo-1614613535308-eb5
 const DB_NAME = 'TraneemDB';
 const STORE_NAME = 'tracks';
 
+let dbInstance: IDBDatabase | null = null;
+
 const initDB = (): Promise<IDBDatabase> => {
+  if (dbInstance) return Promise.resolve(dbInstance);
+
   return new Promise((resolve, reject) => {
     try {
       if (!window.indexedDB) {
@@ -37,7 +42,7 @@ const initDB = (): Promise<IDBDatabase> => {
       
       const timeoutId = setTimeout(() => {
         reject(new Error("IndexedDB initialization timed out."));
-      }, 3000);
+      }, 5000);
 
       const request = window.indexedDB.open(DB_NAME, 1);
       
@@ -50,7 +55,14 @@ const initDB = (): Promise<IDBDatabase> => {
       
       request.onsuccess = () => {
         clearTimeout(timeoutId);
-        resolve(request.result);
+        dbInstance = request.result;
+        
+        dbInstance.onversionchange = () => {
+          dbInstance?.close();
+          dbInstance = null;
+        };
+        
+        resolve(dbInstance);
       };
       
       request.onerror = () => {
@@ -150,6 +162,7 @@ const App: React.FC = () => {
   const [showBackupReminder, setShowBackupReminder] = useState(false);
   const [shuffleHistory, setShuffleHistory] = useState<number[]>([]);
   const [cropperData, setCropperData] = useState<{ image: string; file: File } | null>(null);
+  const [sharingTrack, setSharingTrack] = useState<Track | null>(null);
   const lastStatsUpdateRef = useRef<number>(0);
 
   // Metadata editing state
@@ -620,6 +633,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       const delta = (now - lastStatsUpdateRef.current) / 1000;
       lastStatsUpdateRef.current = now;
 
+      let trackToSave: Track | null = null;
       setTracks(prev => {
         const index = prev.findIndex(t => t.id === currentTrack.id);
         if (index === -1) return prev;
@@ -630,14 +644,14 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         };
         const newTracks = [...prev];
         newTracks[index] = updatedTrack;
-        
-        // Periodic save every 30s or on certain delta to avoid hammering IndexedDB
-        if (Math.random() < 0.1) { // roughly every 50s (10% of 5s intervals)
-          saveTrackToDB(updatedTrack).catch(() => {});
-        }
-        
+        trackToSave = updatedTrack;
         return newTracks;
       });
+
+      // Periodic save outside setTracks callback
+      if (trackToSave && Math.random() < 0.1) {
+        saveTrackToDB(trackToSave).catch(() => {});
+      }
     }, 5000);
 
     return () => {
@@ -646,17 +660,22 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       if (lastStatsUpdateRef.current > 0) {
         const now = Date.now();
         const delta = (now - lastStatsUpdateRef.current) / 1000;
-        setTracks(prev => prev.map(t => {
-           if (t.id === currentTrack.id) {
-             const updated = { 
-               ...t, 
-               listenTime: (t.listenTime || 0) + delta
-             };
-             saveTrackToDB(updated).catch(() => {});
-             return updated;
-           }
-           return t;
-        }));
+        setTracks(prev => {
+          const index = prev.findIndex(t => t.id === currentTrack.id);
+          if (index === -1) return prev;
+          const updated = { 
+            ...prev[index], 
+            listenTime: (prev[index].listenTime || 0) + delta
+          };
+          const newTracks = [...prev];
+          newTracks[index] = updated;
+          
+          setTimeout(() => {
+            saveTrackToDB(updated).catch(() => {});
+          }, 0);
+          
+          return newTracks;
+        });
       }
     };
   }, [playerState.isPlaying, currentTrack?.id]);
@@ -1312,70 +1331,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
   const handleShareTrack = () => {
     if (!currentTrack) return;
-    
-    // Prepare data synchronously to maintain user gesture context
-    let fileToShare: File | null = null;
-    
-    try {
-      if (currentTrack.fileBlob) {
-        let fileName = 'audio.mp3';
-        if (currentTrack.fileBlob instanceof File && currentTrack.fileBlob.name) {
-          fileName = currentTrack.fileBlob.name;
-        } else {
-          const mimeType = currentTrack.fileBlob.type || 'audio/mpeg';
-          const extension = mimeType.includes('mpeg') ? 'mp3' : (mimeType.split('/')[1]?.split(';')[0] || 'mp3');
-          fileName = `${currentTrack.name.replace(/[\\/:*?"<>|]/g, '_')}.${extension}`;
-        }
-        fileToShare = new File([currentTrack.fileBlob], fileName, { 
-          type: currentTrack.fileBlob.type || 'audio/mpeg',
-          lastModified: Date.now()
-        });
-      }
-    } catch (e) {
-      console.warn("Could not create File for sharing:", e);
-    }
-
-    const shareTitle = currentTrack.name;
-    const shareText = `أنشودة: ${currentTrack.name}${currentTrack.artist ? ` - ${currentTrack.artist}` : ''}`;
-    const shareUrl = (currentTrack.audioUrl && !currentTrack.audioUrl.startsWith('blob:')) 
-      ? currentTrack.audioUrl 
-      : window.location.origin;
-
-    // Direct synchronous call to navigator.share to preserve user gesture
-    if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
-      navigator.share({
-        files: [fileToShare],
-        title: shareTitle,
-        text: shareText,
-      }).catch(err => {
-        if (err.name === 'AbortError') return;
-        // Fallback to text if file share fails
-        if (navigator.share) {
-          navigator.share({
-            title: shareTitle,
-            text: shareText,
-            url: shareUrl
-          }).catch(() => {});
-        }
-      });
-    } else if (navigator.share) {
-      navigator.share({
-        title: shareTitle,
-        text: shareText,
-        url: shareUrl
-      }).catch(err => {
-        if (err.name === 'AbortError') return;
-        console.error('Text share failed:', err);
-      });
-    } else {
-      // Manual fallback
-      try {
-        navigator.clipboard.writeText(`${shareTitle} - ${shareUrl}`);
-        alert('تم نسخ رابط الأنشودة');
-      } catch (e) {
-        alert('المشاركة غير مدعومة');
-      }
-    }
+    setSharingTrack(currentTrack);
   };
 
   const handleShare = async () => {
@@ -1616,6 +1572,12 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
           onCropComplete={handleCropComplete}
         />
       )}
+
+      <ShareTrackModal
+        isOpen={sharingTrack !== null}
+        onClose={() => setSharingTrack(null)}
+        track={sharingTrack}
+      />
 
       <AnimatePresence>
         {editingTrack && (

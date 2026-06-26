@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 
 const base64ToBlob = (base64: string, mimeType: string): Blob => {
@@ -9,6 +9,54 @@ const base64ToBlob = (base64: string, mimeType: string): Blob => {
   }
   const byteArray = new Uint8Array(byteNumbers);
   return new Blob([byteArray], { type: mimeType });
+};
+
+const writeString = (view: DataView, offset: number, string: string) => {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+};
+
+const createSilentAudioBlob = (): Blob => {
+  const sampleRate = 8000;
+  const numChannels = 1;
+  const numSamples = sampleRate * 5; // 5 seconds of silence
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+
+  /* RIFF identifier */
+  writeString(view, 0, 'RIFF');
+  /* file length */
+  view.setUint32(4, 36 + numSamples * 2, true);
+  /* WAVE identifier */
+  writeString(view, 8, 'WAVE');
+  /* format chunk identifier */
+  writeString(view, 12, 'fmt ');
+  /* format chunk length */
+  view.setUint32(16, 16, true);
+  /* sample format (raw) */
+  view.setUint16(20, 1, true);
+  /* channel count */
+  view.setUint16(22, numChannels, true);
+  /* sample rate */
+  view.setUint32(24, sampleRate, true);
+  /* byte rate (sample rate * block align) */
+  view.setUint32(28, sampleRate * 2, true);
+  /* block align (channel count * bytes per sample) */
+  view.setUint16(32, numChannels * 2, true);
+  /* bits per sample */
+  view.setUint16(34, 16, true);
+  /* data chunk identifier */
+  writeString(view, 36, 'data');
+  /* data chunk length */
+  view.setUint32(40, numSamples * 2, true);
+
+  // Write silent samples (all zeros)
+  for (let i = 0; i < numSamples; i++) {
+    view.setInt16(44 + i * 2, 0, true);
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
 };
 
 const requestMicPermission = async (): Promise<boolean> => {
@@ -58,11 +106,15 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
   // Visualizer 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const silencePlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const cleanup = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close().catch(() => {});
+    }
+    if (silencePlayerRef.current) {
+      silencePlayerRef.current.pause();
     }
   }, []);
 
@@ -73,6 +125,15 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       cleanup(); // ensure clean state
       setRecordingTime(0);
       recordingTimeRef.current = 0;
+      
+      // Start silent loop to keep background audio pipeline active (prevents mic sleep/suspension)
+      if (!silencePlayerRef.current) {
+        const silentBlob = createSilentAudioBlob();
+        const silentUrl = URL.createObjectURL(silentBlob);
+        silencePlayerRef.current = new Audio(silentUrl);
+        silencePlayerRef.current.loop = true;
+      }
+      silencePlayerRef.current.play().catch(e => console.warn("Failed to play silence loop:", e));
       
       console.log("Checking microphone permission...");
       const hasPermission = await requestMicPermission();
@@ -248,6 +309,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
       try {
         const { VoiceRecorder } = await import('capacitor-voice-recorder');
         if (isPaused) {
+          if (silencePlayerRef.current) silencePlayerRef.current.play().catch(() => {});
           await VoiceRecorder.resumeRecording();
           setIsPaused(false);
           timerRef.current = setInterval(() => {
@@ -261,6 +323,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
           await VoiceRecorder.pauseRecording();
           setIsPaused(true);
           if (timerRef.current) clearInterval(timerRef.current);
+          if (silencePlayerRef.current) silencePlayerRef.current.pause();
         }
         return;
       } catch (err) {
@@ -270,6 +333,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
 
     if (mediaRecorderRef.current && isRecording) {
       if (isPaused) {
+        if (silencePlayerRef.current) silencePlayerRef.current.play().catch(() => {});
         mediaRecorderRef.current.resume();
         setIsPaused(false);
         timerRef.current = setInterval(() => {
@@ -283,6 +347,7 @@ export const useAudioRecorder = (onImport: (file: File, durationOverride?: numbe
         mediaRecorderRef.current.pause();
         setIsPaused(true);
         if (timerRef.current) clearInterval(timerRef.current);
+        if (silencePlayerRef.current) silencePlayerRef.current.pause();
       }
     }
   }, [isRecording, isPaused]);
