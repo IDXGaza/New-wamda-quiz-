@@ -1281,6 +1281,38 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   };
 
   const removeTrack = async (id: string) => {
+    const trackIndexToRemove = tracks.findIndex(t => t.id === id);
+    if (trackIndexToRemove === -1) return;
+
+    // If deleting the currently playing track, pause it first to flush stats and clear intervals safely
+    if (currentTrackIndex === trackIndexToRemove) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setPlayerState(prev => ({ ...prev, isPlaying: false }));
+    }
+
+    // Optimistic UI and Index Update
+    setTracks(prev => {
+      const newTracks = prev.filter(t => t.id !== id);
+      
+      if (newTracks.length === 0) {
+        setCurrentTrackIndex(null);
+      } else if (currentTrackIndex !== null) {
+        if (trackIndexToRemove === currentTrackIndex) {
+          if (currentTrackIndex >= newTracks.length) {
+            setCurrentTrackIndex(newTracks.length - 1);
+          } else {
+            setCurrentTrackIndex(currentTrackIndex);
+          }
+        } else if (trackIndexToRemove < currentTrackIndex) {
+          // Adjust index since an item before the current one was removed
+          setCurrentTrackIndex(currentTrackIndex - 1);
+        }
+      }
+      return newTracks;
+    });
+
     try {
       console.log("Deleting track from DB:", id);
       await deleteTrackFromDB(id);
@@ -1288,13 +1320,6 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
     } catch (error) {
       console.error("Failed to delete track:", error);
     }
-
-    setTracks(prev => {
-      const newTracks = prev.filter(t => t.id !== id);
-      if (newTracks.length === 0) setCurrentTrackIndex(null);
-      else if (currentTrackIndex !== null && currentTrackIndex >= newTracks.length) setCurrentTrackIndex(newTracks.length - 1);
-      return newTracks;
-    });
   };
 
   const handleMoveTrack = (fromIndex: number, toIndex: number) => {
