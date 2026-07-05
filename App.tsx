@@ -37,6 +37,15 @@ const STORE_NAME = 'tracks';
 
 let dbInstance: IDBDatabase | null = null;
 const deletedTrackIds = new Set<string>();
+try {
+  const permanentlyDeletedStr = localStorage.getItem('permanently_deleted_track_ids') || '[]';
+  const list = JSON.parse(permanentlyDeletedStr);
+  if (Array.isArray(list)) {
+    list.forEach(id => deletedTrackIds.add(id));
+  }
+} catch (e) {
+  console.error("Failed to parse permanently_deleted_track_ids on load:", e);
+}
 let onDBChangedCallback: (() => void) | null = null;
 
 const initDB = (): Promise<IDBDatabase> => {
@@ -145,7 +154,19 @@ const deserializeTrackFromDB = (serialized: any): any => {
 };
 
 const saveTrackToDB = async (track: any): Promise<void> => {
-  if (deletedTrackIds.has(track.id)) {
+  let isDeleted = deletedTrackIds.has(track.id);
+  if (!isDeleted) {
+    try {
+      const permanentlyDeletedStr = localStorage.getItem('permanently_deleted_track_ids') || '[]';
+      const list = JSON.parse(permanentlyDeletedStr);
+      if (Array.isArray(list) && list.includes(track.id)) {
+        isDeleted = true;
+        deletedTrackIds.add(track.id); // Cache it in memory too
+      }
+    } catch (e) {}
+  }
+
+  if (isDeleted) {
     console.log("saveTrackToDB: Prevented saving a deleted track", track.id);
     return;
   }
@@ -639,15 +660,26 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       setIsSkipLogin(false);
       
       let finalUser: any = auth.currentUser;
-      if (!finalUser && Capacitor.isNativePlatform()) {
-        const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-        const userResult = await GoogleAuth.signIn() as any;
-        finalUser = {
-          displayName: userResult.displayName || (userResult.givenName + " " + userResult.familyName),
-          email: userResult.email,
-          photoURL: userResult.imageUrl,
-          uid: userResult.id
-        };
+      if (!finalUser) {
+        const cachedUserStr = localStorage.getItem('traneem_user');
+        if (cachedUserStr) {
+          try {
+            finalUser = JSON.parse(cachedUserStr);
+          } catch (e) {
+            console.error("Failed to parse cached user:", e);
+          }
+        }
+        
+        if (!finalUser && Capacitor.isNativePlatform()) {
+          const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+          const userResult = await GoogleAuth.signIn() as any;
+          finalUser = {
+            displayName: userResult.displayName || (userResult.givenName + " " + userResult.familyName) || 'مستخدم ترانيم',
+            email: userResult.email || '',
+            photoURL: userResult.imageUrl || '',
+            uid: userResult.id || ''
+          };
+        }
       }
       
       if (finalUser) {

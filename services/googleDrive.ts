@@ -13,9 +13,20 @@ export const getAccessToken = async (): Promise<string> => {
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
       await GoogleAuth.initialize();
-      const user = await GoogleAuth.signIn();
+      const user = await GoogleAuth.signIn() as any;
       const accessToken = user?.authentication?.accessToken;
       if (!accessToken) throw new Error('accessToken فارغ');
+      
+      if (user) {
+        const traneemUser = {
+          displayName: user.displayName || (user.givenName + " " + user.familyName) || 'مستخدم ترانيم',
+          email: user.email || '',
+          photoURL: user.imageUrl || '',
+          uid: user.id || ''
+        };
+        localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
+      }
+      
       return accessToken;
     } catch (err: any) {
       const msg = err?.message || err?.code || JSON.stringify(err) || 'خطأ غير معروف';
