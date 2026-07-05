@@ -197,14 +197,28 @@ export const runCloudSync = async (
         const localListenTime = local.listenTime || 0;
         const cloudListenTime = cloud.listenTime || 0;
         
-        // Use playCount + listenTime or a simple modified flag
-        // For simplicity and correctness, if cloud is newer or has more listenTime, we update local
-        // Or if local has more listenTime / playCount / updates, we push to cloud
-        const localIsNewer = (local.playbackRate !== cloud.playbackRate) ||
-                             (local.isFavorite !== cloud.isFavorite) ||
-                             (local.timestamps.length !== cloud.timestamps.length) ||
-                             (local.playCount > cloud.playCount) ||
-                             (localListenTime > cloudListenTime);
+        const localLastModified = (local as any).lastModified ? new Date((local as any).lastModified).getTime() : 0;
+        const cloudLastModified = cloud.lastModified ? new Date(cloud.lastModified).getTime() : 0;
+
+        let localIsNewer = false;
+        
+        if (localLastModified > 0 || cloudLastModified > 0) {
+          localIsNewer = localLastModified > cloudLastModified;
+        } else {
+          // Fallback to direct user edits check
+          const isMetadataDifferent = (local.name !== cloud.name) || 
+                                      (local.artist !== cloud.artist);
+          
+          if (isMetadataDifferent) {
+            localIsNewer = true;
+          } else {
+            localIsNewer = (local.playbackRate !== cloud.playbackRate) ||
+                           (local.isFavorite !== cloud.isFavorite) ||
+                           (local.timestamps.length !== cloud.timestamps.length) ||
+                           (local.playCount > cloud.playCount) ||
+                           (localListenTime > cloudListenTime);
+          }
+        }
 
         if (localIsNewer) {
           tracksToUpload.push(local);
@@ -219,7 +233,8 @@ export const runCloudSync = async (
             order: local.order,
             playCount: Math.max(local.playCount, cloud.playCount),
             listenTime: Math.max(localListenTime, cloudListenTime),
-            sourceType: local.sourceType
+            sourceType: local.sourceType,
+            lastModified: (local as any).lastModified || new Date().toISOString()
           });
         } else {
           // Cloud has newer metadata or same, sync back to local metadata
@@ -234,8 +249,9 @@ export const runCloudSync = async (
             order: cloud.order,
             playCount: cloud.playCount,
             listenTime: cloud.listenTime,
-            sourceType: cloud.sourceType || local.sourceType
-          };
+            sourceType: cloud.sourceType || local.sourceType,
+            lastModified: cloud.lastModified
+          } as any;
           await saveLocalTrack(updatedLocal);
           cloudTracksUpdatedList.push(cloud);
         }

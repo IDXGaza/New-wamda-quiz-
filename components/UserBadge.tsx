@@ -4,6 +4,7 @@ import { LogOut, RefreshCw, BarChart2, X, User, Cloud, Share2, Shield, FolderHea
 import { SyncProgress } from '../services/cloudSync';
 import { Track } from '../types';
 import StatsWidget from './StatsWidget';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface UserBadgeProps {
   user: {
@@ -126,207 +127,220 @@ export const UserBadge: React.FC<UserBadgeProps> = ({
       </div>
 
       {/* Left Side Account & Statistics Drawer via React Portal */}
-      {isOpen && createPortal(
-        <>
-          {/* Backdrop Overlay */}
-          <div 
-            onClick={() => setIsOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[240] cursor-pointer animate-in fade-in duration-300"
-          />
+      {createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <>
+              {/* Backdrop Overlay */}
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => setIsOpen(false)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[240] cursor-pointer"
+              />
 
-          {/* Drawer Container (aligned and sliding from left) */}
-          <div 
-            className="fixed inset-y-0 left-0 h-full w-[85%] sm:w-[480px] bg-slate-50 dark:bg-slate-950 border-r border-slate-150 dark:border-slate-900 shadow-2xl flex flex-col text-right animate-in slide-in-from-left duration-300 z-[250] font-sans"
-            dir="rtl"
-          >
-            {/* Drawer Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-900 bg-white dark:bg-slate-950/80 backdrop-blur shrink-0">
-              <div className="flex items-center gap-2">
-                <User className="w-5.5 h-5.5 text-[#4da8ab]" />
-                <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
-                  حسابي ونشاطي
-                </h2>
-              </div>
-              <button 
-                onClick={() => setIsOpen(false)} 
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
-                title="إغلاق"
+              {/* Drawer Container (aligned and sliding from left) */}
+              <motion.div 
+                initial={{ x: "-100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "-100%" }}
+                transition={{ type: "spring", damping: 28, stiffness: 260 }}
+                className="fixed inset-y-0 left-0 h-full w-[85%] sm:w-[480px] bg-slate-50 dark:bg-slate-950 border-r border-slate-150 dark:border-slate-900 shadow-2xl flex flex-col text-right z-[250] font-sans"
+                dir="rtl"
               >
-                <X className="w-5.5 h-5.5" />
-              </button>
-            </div>
-
-            {/* Scrollable Content Body */}
-            <div className="flex-1 p-6 overflow-y-auto space-y-6 custom-scrollbar">
-              
-              {/* User Details / Cloud Connection Card */}
-              {user ? (
-                <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-900/60 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex items-center gap-4 text-right">
-                  {user.photoURL ? (
-                    <img
-                      src={user.photoURL || undefined}
-                      alt={user.displayName || 'مستخدم'}
-                      referrerPolicy="no-referrer"
-                      className="w-16 h-16 rounded-xl border-2 border-[#4da8ab]/40 object-cover shadow-sm"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-tr from-[#4da8ab] to-teal-600 text-white flex items-center justify-center font-black text-2xl shadow-sm">
-                      {(user.displayName || user.email || 'ت').charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="font-black text-base text-slate-900 dark:text-slate-100">
-                        {user.displayName || 'مستمع ترانيم'}
-                      </span>
-                      <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px] font-black px-2 py-0.5 rounded-full border border-emerald-500/20">
-                        مُتصل بالسحاب
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-450 dark:text-slate-500 font-medium truncate">
-                      {user.email}
-                    </p>
-                  </div>
+              {/* Drawer Header */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-900 bg-white dark:bg-slate-950/80 backdrop-blur shrink-0">
+                <div className="flex items-center gap-2">
+                  <User className="w-5.5 h-5.5 text-[#4da8ab]" />
+                  <h2 className="text-base font-black text-slate-900 dark:text-slate-100">
+                    حسابي ونشاطي
+                  </h2>
                 </div>
-              ) : (
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4 text-right">
-                  <div className="flex items-start gap-3.5">
-                    <div className="p-3 bg-[#4da8ab]/10 rounded-xl text-[#4da8ab] shrink-0">
-                      <Cloud className="w-6 h-6" />
-                    </div>
-                    <div className="space-y-1">
-                      <h3 className="font-black text-sm text-slate-900 dark:text-slate-100">حساب محلي (غير متصل بالسحاب)</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-semibold">
-                        بياناتك وأناشيدك محفوظة حالياً على هذا المتصفح فقط. يرجى ربط حسابك في جوجل لتفعيل المزامنة السحابية والحفاظ على مكتبتك آمنة وتزامنها مع أجهزتك الأخرى تلقائياً.
+                <button 
+                  onClick={() => setIsOpen(false)} 
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5.5 h-5.5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content Body */}
+              <div className="flex-1 p-6 overflow-y-auto space-y-6 custom-scrollbar">
+                
+                {/* User Details / Cloud Connection Card */}
+                {user ? (
+                  <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-900/60 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex items-center gap-4 text-right">
+                    {user.photoURL ? (
+                      <img
+                        src={user.photoURL || undefined}
+                        alt={user.displayName || 'مستخدم'}
+                        referrerPolicy="no-referrer"
+                        className="w-16 h-16 rounded-xl border-2 border-[#4da8ab]/40 object-cover shadow-sm"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl bg-gradient-to-tr from-[#4da8ab] to-teal-600 text-white flex items-center justify-center font-black text-2xl shadow-sm">
+                        {(user.displayName || user.email || 'ت').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-black text-base text-slate-900 dark:text-slate-100">
+                          {user.displayName || 'مستمع ترانيم'}
+                        </span>
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px] font-black px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          مُتصل بالسحاب
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-450 dark:text-slate-500 font-medium truncate">
+                        {user.email}
                       </p>
                     </div>
                   </div>
-
-                  <button
-                    onClick={onGoogleLogin}
-                    disabled={isLoggingIn}
-                    className="w-full flex items-center justify-center gap-2.5 bg-[#4da8ab] hover:bg-[#3d9194] text-white py-3 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 cursor-pointer shadow-sm shadow-[#4da8ab]/20 disabled:opacity-50"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.46 1.615l2.427-2.427C17.155 1.54 14.86 1 12.24 1 6.58 1 2 5.58 2 11.24s4.58 10.24 10.24 10.24c5.9 0 9.81-4.15 9.81-10 0-.675-.06-1.335-.18-1.995H12.24z"/>
-                    </svg>
-                    <span>{isLoggingIn ? 'جاري الاتصال بالسحاب...' : 'ربط السحابة وحفظ الأناشيد'}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Listening Stats Full Widget */}
-              <div className="space-y-2">
-                <h3 className="text-xs font-black text-slate-450 dark:text-slate-500 uppercase tracking-wider mr-1">إحصائيات النشاط</h3>
-                <StatsWidget tracks={tracks} />
-              </div>
-
-              {/* Cloud Sync Status and Manual Controls (If Logged-in) */}
-              {user && (
-                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4 text-right">
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-3">
-                    <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100">
-                      <Cloud className="w-4.5 h-4.5 text-[#4da8ab]" />
-                      <span className="text-xs font-black">المزامنة والنسخ السحابي</span>
+                ) : (
+                  <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4 text-right">
+                    <div className="flex items-start gap-3.5">
+                      <div className="p-3 bg-[#4da8ab]/10 rounded-xl text-[#4da8ab] shrink-0">
+                        <Cloud className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="font-black text-sm text-slate-900 dark:text-slate-100">حساب محلي (غير متصل بالسحاب)</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-semibold">
+                          بياناتك وأناشيدك محفوظة حالياً على هذا المتصفح فقط. يرجى ربط حسابك في جوجل لتفعيل المزامنة السحابية والحفاظ على مكتبتك آمنة وتزامنها مع أجهزتك الأخرى تلقائياً.
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${syncProgress.status === 'completed' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : syncProgress.status === 'error' ? 'bg-rose-500' : 'bg-amber-500 animate-pulse'}`} />
-                      <span className="text-[11px] font-black text-slate-600 dark:text-slate-400">
-                        {syncProgress.status === 'completed' ? 'مكتملة ومؤمنة' : syncProgress.status === 'error' ? 'فشلت المزامنة' : 'جاري التحديث'}
-                      </span>
-                    </div>
+
+                    <button
+                      onClick={onGoogleLogin}
+                      disabled={isLoggingIn}
+                      className="w-full flex items-center justify-center gap-2.5 bg-[#4da8ab] hover:bg-[#3d9194] text-white py-3 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 cursor-pointer shadow-sm shadow-[#4da8ab]/20 disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.7 0 3.25.61 4.46 1.615l2.427-2.427C17.155 1.54 14.86 1 12.24 1 6.58 1 2 5.58 2 11.24s4.58 10.24 10.24 10.24c5.9 0 9.81-4.15 9.81-10 0-.675-.06-1.335-.18-1.995H12.24z"/>
+                      </svg>
+                      <span>{isLoggingIn ? 'جاري الاتصال بالسحاب...' : 'ربط السحابة وحفظ الأناشيد'}</span>
+                    </button>
                   </div>
+                )}
 
-                  {syncProgress.message && (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-semibold">
-                      • {syncProgress.message}
-                    </p>
-                  )}
+                {/* Listening Stats Full Widget */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-black text-slate-450 dark:text-slate-500 uppercase tracking-wider mr-1">إحصائيات النشاط</h3>
+                  <StatsWidget tracks={tracks} />
+                </div>
 
-                  {/* Progress bar */}
-                  {(syncProgress.status === 'pulling' || syncProgress.status === 'pushing' || syncProgress.status === 'checking') && (
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-[#4da8ab] h-full transition-all duration-350 ease-out"
-                        style={{ width: `${syncProgress.progress}%` }}
-                      />
+                {/* Cloud Sync Status and Manual Controls (If Logged-in) */}
+                {user && (
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-4 text-right">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-3">
+                      <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100">
+                        <Cloud className="w-4.5 h-4.5 text-[#4da8ab]" />
+                        <span className="text-xs font-black">المزامنة والنسخ السحابي</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${syncProgress.status === 'completed' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : syncProgress.status === 'error' ? 'bg-rose-500' : 'bg-amber-500 animate-pulse'}`} />
+                        <span className="text-[11px] font-black text-slate-600 dark:text-slate-400">
+                          {syncProgress.status === 'completed' ? 'مكتملة ومؤمنة' : syncProgress.status === 'error' ? 'فشلت المزامنة' : 'جاري التحديث'}
+                        </span>
+                      </div>
                     </div>
-                  )}
 
-                  <button
-                    onClick={onSyncNow}
-                    disabled={syncProgress.status === 'checking' || syncProgress.status === 'pulling' || syncProgress.status === 'pushing'}
-                    className="w-full flex items-center justify-center gap-2 bg-[#4da8ab]/10 hover:bg-[#4da8ab]/15 text-[#4da8ab] py-2.5 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 disabled:opacity-50 cursor-pointer"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${syncProgress.status === 'pulling' || syncProgress.status === 'pushing' ? 'animate-spin' : ''}`} />
-                    <span>مزامنة يدوية الآن مع السحابة</span>
-                  </button>
+                    {syncProgress.message && (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed font-semibold">
+                        • {syncProgress.message}
+                      </p>
+                    )}
+
+                    {/* Progress bar */}
+                    {(syncProgress.status === 'pulling' || syncProgress.status === 'pushing' || syncProgress.status === 'checking') && (
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-[#4da8ab] h-full transition-all duration-350 ease-out"
+                          style={{ width: `${syncProgress.progress}%` }}
+                        />
+                      </div>
+                    )}
+
+                    <button
+                      onClick={onSyncNow}
+                      disabled={syncProgress.status === 'checking' || syncProgress.status === 'pulling' || syncProgress.status === 'pushing'}
+                      className="w-full flex items-center justify-center gap-2 bg-[#4da8ab]/10 hover:bg-[#4da8ab]/15 text-[#4da8ab] py-2.5 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${syncProgress.status === 'pulling' || syncProgress.status === 'pushing' ? 'animate-spin' : ''}`} />
+                      <span>مزامنة يدوية الآن مع السحابة</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Quick Actions Panel */}
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-3.5 text-right">
+                  <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800/60 pb-3">
+                    <Shield className="w-4.5 h-4.5 text-[#4da8ab]" />
+                    <span>إجراءات سريعة وأدوات</span>
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* ZIP Backup */}
+                    <button
+                      onClick={() => {
+                        onOpenBackup('backup');
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d9194] text-white py-3 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 cursor-pointer shadow-sm shadow-[#4da8ab]/15"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span>إنشاء نسخة احتياطية ZIP</span>
+                    </button>
+
+                    {/* Import Backup */}
+                    <button
+                      onClick={() => {
+                        onOpenBackup('import');
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 py-3 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 cursor-pointer border border-slate-150 dark:border-slate-700/60"
+                    >
+                      <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
+                      </svg>
+                      <span>استيراد نسخة احتياطية</span>
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              {/* Quick Actions Panel */}
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-150 dark:border-slate-800/80 shadow-sm space-y-3.5 text-right">
-                <h3 className="text-xs font-black text-slate-800 dark:text-slate-100 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800/60 pb-3">
-                  <Shield className="w-4.5 h-4.5 text-[#4da8ab]" />
-                  <span>إجراءات سريعة وأدوات</span>
-                </h3>
+                {/* Logout Trigger Card (For logged in users) */}
+                {user && (
+                  <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
+                    <button
+                      onClick={() => {
+                        onLogout();
+                        setIsOpen(false);
+                      }}
+                      className="w-full bg-rose-500/5 hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 py-3.5 px-4 rounded-xl text-xs font-black flex items-center justify-between transition-all duration-150 border border-rose-500/10 active:scale-95 cursor-pointer"
+                    >
+                      <span>تسجيل خروج الحساب</span>
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* ZIP Backup */}
-                  <button
-                    onClick={() => {
-                      onOpenBackup('backup');
-                    }}
-                    className="w-full flex items-center justify-center gap-2 bg-[#4da8ab] hover:bg-[#3d9194] text-white py-3 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 cursor-pointer shadow-sm shadow-[#4da8ab]/15"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    <span>إنشاء نسخة احتياطية ZIP</span>
-                  </button>
-
-                  {/* Import Backup */}
-                  <button
-                    onClick={() => {
-                      onOpenBackup('import');
-                    }}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 py-3 px-4 rounded-xl text-xs font-black transition-all duration-200 active:scale-95 cursor-pointer border border-slate-150 dark:border-slate-700/60"
-                  >
-                    <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
-                    </svg>
-                    <span>استيراد نسخة احتياطية</span>
-                  </button>
-                </div>
               </div>
 
-              {/* Logout Trigger Card (For logged in users) */}
-              {user && (
-                <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
-                  <button
-                    onClick={() => {
-                      onLogout();
-                      setIsOpen(false);
-                    }}
-                    className="w-full bg-rose-500/5 hover:bg-rose-500/10 text-rose-600 dark:text-rose-400 py-3.5 px-4 rounded-xl text-xs font-black flex items-center justify-between transition-all duration-150 border border-rose-500/10 active:scale-95 cursor-pointer"
-                  >
-                    <span>تسجيل خروج الحساب</span>
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-            </div>
-
-            {/* Footer Label */}
-            <div className="p-5 text-center border-t border-slate-100 dark:border-slate-900 bg-white dark:bg-slate-950 shrink-0">
-              <p className="text-[10px] font-black text-slate-400 dark:text-slate-500">
-                ترانيم © {new Date().getFullYear()} • تطبيق الاستماع للأناشيد والتسجيلات
-              </p>
-            </div>
-          </div>
-        </>
-      , document.body)}
+              {/* Footer Label */}
+              <div className="p-5 text-center border-t border-slate-100 dark:border-slate-900 bg-white dark:bg-slate-950 shrink-0">
+                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500">
+                  ترانيم © {new Date().getFullYear()} • تطبيق الاستماع للأناشيد والتسجيلات
+                </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>,
+      document.body
+    )}
     </div>
   );
 };

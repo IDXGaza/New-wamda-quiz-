@@ -13,6 +13,7 @@
         "https://www.googleapis.com/auth/drive.file",
         "https://www.googleapis.com/auth/drive.appdata"
       ],
+      "clientId": "911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com",
       "serverClientId": "911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com",
       "forceCodeForRefreshToken": true
     }

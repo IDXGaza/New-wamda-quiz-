@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "911335724064-8oqvrcrp5tqm98oitc4arqsi10s11hfe.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.idxgaza.traneem",
+            "certificate_hash": "e90ed6eb21c1f14e8d729419ffb9dc4681478514"
+          }
+        },
+        {
           "client_id": "911335724064-9n20v3rgdsib2ff94g0enaj9uf9j3tu3.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -27,6 +35,14 @@
           "android_info": {
             "package_name": "com.idxgaza.traneem",
             "certificate_hash": "eaf736dcd8b0600a9aa6154efbd1a635ba25a1e5"
+          }
+        },
+        {
+          "client_id": "911335724064-pcu178ohdvb3lgsjsit5u5smil6bevqg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.idxgaza.traneem",
+            "certificate_hash": "69b2c23cd086d55a7f762aba2e5c8f6f12e74b9f"
           }
         },
         {

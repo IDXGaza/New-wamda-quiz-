@@ -1465,7 +1465,11 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
   const handleToggleFavorite = async () => {
     if (!currentTrack) return;
-    const updatedTrack = { ...currentTrack, isFavorite: !currentTrack.isFavorite };
+    const updatedTrack = { 
+      ...currentTrack, 
+      isFavorite: !currentTrack.isFavorite,
+      lastModified: new Date().toISOString()
+    };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
     saveTrackToDB(updatedTrack).catch(console.error);
   };
@@ -1480,7 +1484,10 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   const handleSaveMetadata = async () => {
     if (!editingTrack) return;
     
-    let updatedTrack = { ...editingTrack };
+    let updatedTrack = { 
+      ...editingTrack,
+      lastModified: new Date().toISOString()
+    };
     if (editMode === 'name') {
       const trimmedName = editName.trim();
       if (!trimmedName) {
@@ -1519,7 +1526,8 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         ...currentTrack, 
         coverUrl: URL.createObjectURL(croppedFile), 
         coverBlob: croppedFile,
-        sourceType: 'import'
+        sourceType: 'import',
+        lastModified: new Date().toISOString()
       };
       setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
       saveTrackToDB(updatedTrack);
@@ -1538,14 +1546,22 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       time: audioRef.current.currentTime,
       label: `علامة ${currentTrack.timestamps.length + 1}`
     };
-    const updatedTrack = { ...currentTrack, timestamps: [...currentTrack.timestamps, newTimestamp] };
+    const updatedTrack = { 
+      ...currentTrack, 
+      timestamps: [...currentTrack.timestamps, newTimestamp],
+      lastModified: new Date().toISOString()
+    };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
     saveTrackToDB(updatedTrack);
   };
 
   const handleRemoveTimestamp = (timestampId: string) => {
     if (!currentTrack) return;
-    const updatedTrack = { ...currentTrack, timestamps: currentTrack.timestamps.filter(ts => ts.id !== timestampId) };
+    const updatedTrack = { 
+      ...currentTrack, 
+      timestamps: currentTrack.timestamps.filter(ts => ts.id !== timestampId),
+      lastModified: new Date().toISOString()
+    };
     setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
     saveTrackToDB(updatedTrack);
   };
@@ -1558,6 +1574,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       url: URL.createObjectURL(file), coverUrl: UNIFORM_PLACEHOLDER,
       isFavorite: false, timestamps: [], duration: durationOverride || 0, playbackRate: 1,
       order: tracks.length, listenTime: 0, playCount: 0, fileBlob: file, sourceType: sourceType,
+      lastModified: new Date().toISOString()
     };
     
     // Optimistic UI update

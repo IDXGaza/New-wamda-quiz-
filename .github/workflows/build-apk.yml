@@ -50,6 +50,12 @@ jobs:
       - name: Copy google-services.json
         run: cp google-services.json android/app/google-services.json
 
+      - name: Copy debug.keystore to Android project and user home
+        run: |
+          mkdir -p ~/.android
+          cp debug.keystore ~/.android/debug.keystore
+          cp debug.keystore android/app/debug.keystore
+
       - name: Register GoogleAuth plugin in MainActivity
         run: |
           cat > android/app/src/main/java/com/idxgaza/traneem/MainActivity.kt << 'EOF'

@@ -25,6 +25,7 @@ export interface Track {
   fileBlob?: File | Blob;
   coverBlob?: File | Blob;
   sourceType?: 'record' | 'import';
+  lastModified?: string;
 }
 
 export interface PlayerState {
