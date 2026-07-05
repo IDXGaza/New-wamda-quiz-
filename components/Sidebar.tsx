@@ -110,10 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       return matchesSearch && matchesType;
     })
     .sort((a, b) => {
-      // Prioritize favorites
-      if (a.track.isFavorite && !b.track.isFavorite) return -1;
-      if (!a.track.isFavorite && b.track.isFavorite) return 1;
-      // Then respect literal order
+      // Respect literal order for natural drag and drop
       return (a.track.order ?? 0) - (b.track.order ?? 0);
     }), [tracks, searchTerm, view]);
 
@@ -524,7 +521,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     className={`flex-1 flex items-center gap-3 p-2.5 rounded-[22px] transition-all duration-300 min-w-0 cursor-pointer ${currentId === item.track.id ? 'bg-[#4da8ab]/10 shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-900'} ${isRecording ? 'opacity-40 grayscale pointer-events-none' : ''}`}
                   >
                     <div className="relative shrink-0">
-                      <img src={item.track.coverUrl} className="w-11 h-11 rounded-xl object-cover shadow-md pointer-events-none" alt="" />
+                      <img src={item.track.coverUrl || undefined} className="w-11 h-11 rounded-xl object-cover shadow-md pointer-events-none" alt="" />
                       {item.track.isFavorite && (
                         <div className="absolute -top-1.5 -right-1.5 bg-white dark:bg-slate-900 rounded-full p-1 shadow-md border border-slate-50 dark:border-slate-800">
                           <Heart className="w-2.5 h-2.5 text-rose-500 fill-rose-500" />

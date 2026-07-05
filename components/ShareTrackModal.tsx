@@ -165,7 +165,7 @@ export const ShareTrackModal: React.FC<ShareTrackModalProps> = ({
           <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-950/40 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/60">
             <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800 flex-shrink-0">
               <img 
-                src={track.coverUrl} 
+                src={track.coverUrl || undefined} 
                 alt="" 
                 className="w-full h-full object-cover" 
                 referrerPolicy="no-referrer"

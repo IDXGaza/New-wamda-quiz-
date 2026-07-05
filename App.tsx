@@ -22,6 +22,12 @@ import ImageCropperModal from './components/ImageCropperModal';
 import { ShareTrackModal } from './components/ShareTrackModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// Cloud Sync integrations
+import { runCloudSync, SyncProgress } from './services/cloudSync';
+import { getAccessToken } from './services/googleDrive';
+import { LoginScreen } from './components/LoginScreen';
+import { UserBadge } from './components/UserBadge';
+
 // Removed cloud functions syncTrackToCloud and syncDeleteTrackToCloud
 
 const UNIFORM_PLACEHOLDER = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&h=600&auto=format&fit=crop";
@@ -30,6 +36,8 @@ const DB_NAME = 'TraneemDB';
 const STORE_NAME = 'tracks';
 
 let dbInstance: IDBDatabase | null = null;
+const deletedTrackIds = new Set<string>();
+let onDBChangedCallback: (() => void) | null = null;
 
 const initDB = (): Promise<IDBDatabase> => {
   if (dbInstance) return Promise.resolve(dbInstance);
@@ -80,17 +88,79 @@ const initDB = (): Promise<IDBDatabase> => {
   });
 };
 
+const blobToArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
+};
+
+const serializeTrackForDB = async (track: any): Promise<any> => {
+  const serialized = { ...track };
+  
+  if (track.fileBlob && track.fileBlob instanceof Blob) {
+    try {
+      serialized.fileBuffer = await blobToArrayBuffer(track.fileBlob);
+      serialized.fileBlobType = track.fileBlob.type;
+    } catch (e) {
+      console.error("Failed to convert fileBlob to ArrayBuffer", e);
+    }
+    delete serialized.fileBlob;
+  }
+  
+  if (track.coverBlob && track.coverBlob instanceof Blob) {
+    try {
+      serialized.coverBuffer = await blobToArrayBuffer(track.coverBlob);
+      serialized.coverBlobType = track.coverBlob.type;
+    } catch (e) {
+      console.error("Failed to convert coverBlob to ArrayBuffer", e);
+    }
+    delete serialized.coverBlob;
+  }
+  
+  // Strip temporary blob URLs to avoid wasting DB space and reference dead object URLs
+  delete serialized.url;
+  delete serialized.coverUrl;
+
+  return serialized;
+};
+
+const deserializeTrackFromDB = (serialized: any): any => {
+  if (!serialized) return serialized;
+  const track = { ...serialized };
+  
+  if (serialized.fileBuffer) {
+    track.fileBlob = new Blob([serialized.fileBuffer], { type: serialized.fileBlobType || 'audio/mpeg' });
+    delete track.fileBuffer;
+  }
+  
+  if (serialized.coverBuffer) {
+    track.coverBlob = new Blob([serialized.coverBuffer], { type: serialized.coverBlobType || 'image/jpeg' });
+    delete track.coverBuffer;
+  }
+  
+  return track;
+};
+
 const saveTrackToDB = async (track: any): Promise<void> => {
+  if (deletedTrackIds.has(track.id)) {
+    console.log("saveTrackToDB: Prevented saving a deleted track", track.id);
+    return;
+  }
   try {
     const db = await initDB();
+    const serialized = await serializeTrackForDB(track);
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
-      tx.objectStore(STORE_NAME).put(track);
+      tx.objectStore(STORE_NAME).put(serialized);
     });
     
-    // Manual sync disabled
+    // Trigger auto-sync callback for real-time changes
+    onDBChangedCallback?.();
   } catch (error) {
     console.error("IndexedDB save error:", error);
     throw error;
@@ -98,6 +168,18 @@ const saveTrackToDB = async (track: any): Promise<void> => {
 };
 
 const deleteTrackFromDB = async (id: string): Promise<void> => {
+  deletedTrackIds.add(id);
+  try {
+    const permanentlyDeletedStr = localStorage.getItem('permanently_deleted_track_ids') || '[]';
+    const permanentlyDeleted = JSON.parse(permanentlyDeletedStr);
+    if (!permanentlyDeleted.includes(id)) {
+      permanentlyDeleted.push(id);
+      localStorage.setItem('permanently_deleted_track_ids', JSON.stringify(permanentlyDeleted));
+    }
+  } catch (e) {
+    console.error("Failed to save permanently deleted track id:", e);
+  }
+
   try {
     const db = await initDB();
     await new Promise<void>((resolve, reject) => {
@@ -106,7 +188,9 @@ const deleteTrackFromDB = async (id: string): Promise<void> => {
       tx.onerror = () => reject(tx.error);
       tx.objectStore(STORE_NAME).delete(id);
     });
-    // Manual sync disabled
+    
+    // Trigger auto-sync callback for real-time changes
+    onDBChangedCallback?.();
   } catch (error) {
     console.error("IndexedDB delete error:", error);
     throw error;
@@ -116,12 +200,13 @@ const deleteTrackFromDB = async (id: string): Promise<void> => {
 const getAllTracksFromDB = async (): Promise<any[]> => {
   try {
     const db = await initDB();
-    return new Promise((resolve, reject) => {
+    const serializedTracks = await new Promise<any[]>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const request = tx.objectStore(STORE_NAME).getAll();
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(tx.error);
     });
+    return serializedTracks.map(t => deserializeTrackFromDB(t));
   } catch (error) {
     console.error("IndexedDB get all error:", error);
     return [];
@@ -146,17 +231,66 @@ const getTrackFromDB = async (id: string): Promise<any> => {
 const App: React.FC = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
+
+  // Request storage persistence and track application usage & opens
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then((persisted) => {
+          console.log("📦 Storage persistence status:", persisted);
+        }).catch((err) => {
+          console.error("❌ Storage persistence request failed:", err);
+        });
+      }
+
+      // Track application open count
+      try {
+        const currentCount = parseInt(localStorage.getItem('app_open_count') || '0', 10);
+        localStorage.setItem('app_open_count', (currentCount + 1).toString());
+      } catch (e) {
+        console.error("Failed to update open count", e);
+      }
+
+      // Track total usage time
+      const interval = setInterval(() => {
+        try {
+          const currentUsage = parseInt(localStorage.getItem('app_total_usage_time') || '0', 10);
+          localStorage.setItem('app_total_usage_time', (currentUsage + 1).toString());
+        } catch (e) {
+          console.error("Failed to update usage time", e);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth >= 1024;
     }
     return false;
   });
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('traneem_user');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isSkipLogin, setIsSkipLogin] = useState(() => {
+    return localStorage.getItem('skip_cloud_sync') === 'true';
+  });
+  const [syncProgress, setSyncProgress] = useState<SyncProgress>({
+    status: 'idle',
+    message: '',
+    progress: 0
+  });
+  const syncDebounceRef = useRef<any>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
+  const [backupModalMode, setBackupModalMode] = useState<'backup' | 'import' | null>(null);
   const [isBackupProcessing, setIsBackupProcessing] = useState(false);
   const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
@@ -416,6 +550,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
       }));
       setTracks(withUrls.sort((a, b) => a.order - b.order));
+      localStorage.removeItem('permanently_deleted_track_ids');
       recordSuccessfulBackup();
       setBackupStatusMessage('تمت الاستعادة بنجاح! جاري تحديث المكتبة... ✅');
     } catch (error) {
@@ -432,15 +567,13 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   });
 
   const handleToggleSourceType = (id: string, explicitType?: 'record' | 'import') => {
-    setTracks(prev => prev.map(t => {
-      if (t.id === id) {
-        const newType = explicitType || ((t.sourceType === 'record' ? 'import' : 'record') as 'record' | 'import');
-        const updated: Track = { ...t, sourceType: newType };
-        saveTrackToDB(updated);
-        return updated;
-      }
-      return t;
-    }));
+    const track = tracksRef.current.find(t => t.id === id);
+    if (!track) return;
+    const newType = explicitType || ((track.sourceType === 'record' ? 'import' : 'record') as 'record' | 'import');
+    const updated: Track = { ...track, sourceType: newType };
+    
+    setTracks(prev => prev.map(t => t.id === id ? updated : t));
+    saveTrackToDB(updated).catch(console.error);
   };
 
   const setDefaultViewSetting = (view: 'all' | 'record' | 'import') => {
@@ -452,26 +585,167 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   const touchStartYRef = useRef<number | null>(null);
   const isSwipeCancelledRef = useRef<boolean>(false);
   
+  // Handle initial firebase auth listener
   useEffect(() => {
-    // Check for redirect result on load
-    getRedirectResult(auth).catch((error) => console.error("Redirect login error:", error));
-    
     return onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+      if (currentUser) {
+        const traneemUser = {
+          displayName: currentUser.displayName,
+          email: currentUser.email,
+          photoURL: currentUser.photoURL,
+          uid: currentUser.uid
+        };
+        setUser(currentUser);
+        localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
+      } else {
+        localStorage.removeItem('traneem_user');
+        setUser(null);
+      }
     });
   }, []);
 
-  const handleGoogleLogin = async () => {
+  const handleStartSync = async (token: string) => {
+    try {
+      setSyncProgress({ status: 'checking', message: 'جاري بدء المزامنة السحابية...', progress: 15 });
+      const syncedTracks = await runCloudSync(token, (prog) => {
+        setSyncProgress(prog);
+      });
+      
+      const tracksWithUrls = syncedTracks.map(t => ({
+        ...t,
+        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+      }));
+      
+      setTracks(tracksWithUrls.sort((a, b) => (a.order || 0) - (b.order || 0)));
+      
+      setSyncProgress({ status: 'completed', message: 'اكتملت المزامنة بنجاح! ✅', progress: 100 });
+      setTimeout(() => {
+        setSyncProgress(prev => prev.status === 'completed' ? { status: 'idle', message: '', progress: 0 } : prev);
+      }, 3500);
+    } catch (err: any) {
+      console.error('Auto sync failed:', err);
+      setSyncProgress({ status: 'error', message: `فشلت المزامنة: ${err.message || err}`, progress: 100 });
+    }
+  };
+
+  const triggerGoogleLogin = async () => {
     setIsLoggingIn(true);
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider);
-    } catch (error) {
+      const token = await getAccessToken();
+      localStorage.setItem('google_access_token', token);
+      localStorage.setItem('google_token_acquired_at', Date.now().toString());
+      localStorage.removeItem('skip_cloud_sync');
+      setIsSkipLogin(false);
+      
+      let finalUser: any = auth.currentUser;
+      if (!finalUser && Capacitor.isNativePlatform()) {
+        const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
+        const userResult = await GoogleAuth.signIn() as any;
+        finalUser = {
+          displayName: userResult.displayName || (userResult.givenName + " " + userResult.familyName),
+          email: userResult.email,
+          photoURL: userResult.imageUrl,
+          uid: userResult.id
+        };
+      }
+      
+      if (finalUser) {
+        setUser(finalUser);
+        localStorage.setItem('traneem_user', JSON.stringify({
+          displayName: finalUser.displayName,
+          email: finalUser.email,
+          photoURL: finalUser.photoURL,
+          uid: finalUser.uid
+        }));
+      }
+      
+      if (token) {
+        await handleStartSync(token);
+      }
+    } catch (error: any) {
       console.error("Login failed:", error);
-      alert("فشل تسجيل الدخول");
+      alert("فشل تسجيل الدخول: " + (error?.message || error));
+    } finally {
       setIsLoggingIn(false);
     }
   };
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      localStorage.removeItem('google_access_token');
+      localStorage.removeItem('google_token_acquired_at');
+      localStorage.removeItem('traneem_user');
+      localStorage.removeItem('synced_track_ids');
+      localStorage.removeItem('permanently_deleted_track_ids');
+      setUser(null);
+      
+      // Re-load offline database tracks
+      const savedTracks = await getAllTracksFromDB();
+      const sortedTracks = savedTracks.sort((a, b) => (a.order || 0) - (b.order || 0));
+      const tracksWithUrls = sortedTracks.map(t => ({
+        ...t,
+        url: t.fileBlob ? URL.createObjectURL(t.fileBlob) : (t.audioUrl || ""),
+        coverUrl: t.coverBlob ? URL.createObjectURL(t.coverBlob) : (t.coverUrl || UNIFORM_PLACEHOLDER)
+      }));
+      setTracks(tracksWithUrls);
+      if (tracksWithUrls.length > 0) {
+        setCurrentTrackIndex(0);
+      } else {
+        setCurrentTrackIndex(null);
+      }
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  const triggerAutoSyncWithCloud = useCallback(() => {
+    const savedToken = localStorage.getItem('google_access_token');
+    const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
+    const isExpired = Date.now() - acquiredAt > 50 * 60 * 1000;
+    
+    if (!user || isSkipLogin || !savedToken || isExpired) return;
+
+    if (syncDebounceRef.current) {
+      clearTimeout(syncDebounceRef.current);
+    }
+
+    syncDebounceRef.current = setTimeout(() => {
+      console.log('Debounced auto-sync triggered...');
+      handleStartSync(savedToken);
+    }, 8000);
+  }, [user, isSkipLogin]);
+
+  // Bind the global IndexedDB change callback to trigger our auto-sync
+  useEffect(() => {
+    onDBChangedCallback = () => {
+      triggerAutoSyncWithCloud();
+    };
+    return () => {
+      onDBChangedCallback = null;
+    };
+  }, [triggerAutoSyncWithCloud]);
+
+  // Handle auto-sync on mount
+  useEffect(() => {
+    const checkAndInitSync = async () => {
+      const savedToken = localStorage.getItem('google_access_token');
+      const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
+      const isExpired = Date.now() - acquiredAt > 50 * 60 * 1000;
+      
+      if (savedToken && !isExpired && user && !isSkipLogin) {
+        await handleStartSync(savedToken);
+      } else if (user && !isSkipLogin) {
+        setSyncProgress({
+          status: 'error',
+          message: 'انتهت صلاحية الجلسة السحابية. اضغط لتجديدها ومزامنة بياناتك.',
+          progress: 100
+        });
+      }
+    };
+    checkAndInitSync();
+  }, [user, isSkipLogin]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isRecording) return;
@@ -555,7 +829,6 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       } else {
         triggerDownload(zipBlob, exportName);
       }
-      setIsDropdownOpen(false);
     } catch (e) {
       console.error("Export zip failed", e);
       alert("فشل تصدير النسخة الاحتياطية: " + (e instanceof Error ? e.message : String(e)));
@@ -583,7 +856,6 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
     const file = e.target.files?.[0];
     if (!file) return;
     await handleRestoreFromZipBlob(file);
-    setIsDropdownOpen(false);
     e.target.value = '';
   };
 
@@ -633,24 +905,20 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       const delta = (now - lastStatsUpdateRef.current) / 1000;
       lastStatsUpdateRef.current = now;
 
-      let trackToSave: Track | null = null;
-      setTracks(prev => {
-        const index = prev.findIndex(t => t.id === currentTrack.id);
-        if (index === -1) return prev;
-        
-        const updatedTrack = { 
-          ...prev[index], 
-          listenTime: (prev[index].listenTime || 0) + delta
-        };
-        const newTracks = [...prev];
-        newTracks[index] = updatedTrack;
-        trackToSave = updatedTrack;
-        return newTracks;
-      });
+      const latestTracks = tracksRef.current;
+      const latestTrack = latestTracks.find(t => t.id === currentTrack.id);
+      if (!latestTrack) return;
 
-      // Periodic save outside setTracks callback
-      if (trackToSave && Math.random() < 0.1) {
-        saveTrackToDB(trackToSave).catch(() => {});
+      const updatedTrack = { 
+        ...latestTrack, 
+        listenTime: (latestTrack.listenTime || 0) + delta
+      };
+
+      setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
+
+      // Periodic save (10% chance)
+      if (Math.random() < 0.1) {
+        saveTrackToDB(updatedTrack).catch(() => {});
       }
     }, 5000);
 
@@ -660,22 +928,19 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       if (lastStatsUpdateRef.current > 0) {
         const now = Date.now();
         const delta = (now - lastStatsUpdateRef.current) / 1000;
-        setTracks(prev => {
-          const index = prev.findIndex(t => t.id === currentTrack.id);
-          if (index === -1) return prev;
-          const updated = { 
-            ...prev[index], 
-            listenTime: (prev[index].listenTime || 0) + delta
+        lastStatsUpdateRef.current = 0; // Prevent duplicate run
+
+        const latestTracks = tracksRef.current;
+        const latestTrack = latestTracks.find(t => t.id === currentTrack.id);
+        if (latestTrack) {
+          const updatedTrack = { 
+            ...latestTrack, 
+            listenTime: (latestTrack.listenTime || 0) + delta
           };
-          const newTracks = [...prev];
-          newTracks[index] = updated;
           
-          setTimeout(() => {
-            saveTrackToDB(updated).catch(() => {});
-          }, 0);
-          
-          return newTracks;
-        });
+          setTracks(prev => prev.map(t => t.id === currentTrack.id ? updatedTrack : t));
+          saveTrackToDB(updatedTrack).catch(() => {});
+        }
       }
     };
   }, [playerState.isPlaying, currentTrack?.id]);
@@ -1255,6 +1520,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
   const addTrack = async (file: File, durationOverride?: number, sourceType: 'record' | 'import' = 'import') => {
     const id = Math.random().toString(36).substr(2, 9);
+    deletedTrackIds.delete(id);
     const newTrack: Track = {
       id, name: file.name.replace(/\.[^/.]+$/, ""), artist: "",
       url: URL.createObjectURL(file), coverUrl: UNIFORM_PLACEHOLDER,
@@ -1322,13 +1588,28 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
     }
   };
 
-  const handleMoveTrack = (fromIndex: number, toIndex: number) => {
-    setTracks(prev => {
-      const newTracks = [...prev];
-      const [movedItem] = newTracks.splice(fromIndex, 1);
-      newTracks.splice(toIndex, 0, movedItem);
-      return newTracks.map((t, idx) => ({ ...t, order: idx }));
-    });
+  const handleMoveTrack = async (fromIndex: number, toIndex: number) => {
+    const currentTracks = tracksRef.current;
+    if (fromIndex < 0 || fromIndex >= currentTracks.length || toIndex < 0 || toIndex >= currentTracks.length) {
+      return;
+    }
+    const newTracks = [...currentTracks];
+    const [movedItem] = newTracks.splice(fromIndex, 1);
+    newTracks.splice(toIndex, 0, movedItem);
+    const updatedTracks = newTracks.map((t, idx) => ({ ...t, order: idx }));
+
+    setTracks(updatedTracks);
+
+    // Save the correct updated order to IndexedDB immediately using the updatedTracks array
+    try {
+      console.log("Saving all tracks after reorder:", updatedTracks.length);
+      for (const track of updatedTracks) {
+        await saveTrackToDB(track);
+      }
+      console.log("All tracks saved successfully after reorder");
+    } catch (error) {
+      console.error("Failed to save reordered tracks:", error);
+    }
   };
 
   // Re-sync currentTrackIndex when tracks order changes to keep selection on same item
@@ -1342,16 +1623,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   }, [tracks, currentTrack?.id, currentTrackIndex]);
 
   const handleReorderEnd = async () => {
-    // Persistence
-    try {
-      console.log("Saving all tracks after reorder:", tracks.length);
-      for (const track of tracks) {
-        await saveTrackToDB(track);
-      }
-      console.log("All tracks saved successfully after reorder");
-    } catch (error) {
-      console.error("Failed to save reordered tracks:", error);
-    }
+    // Already saved inside handleMoveTrack to prevent stale closure bugs
   };
 
   const handleShareTrack = () => {
@@ -1400,60 +1672,27 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         <h1 className="text-xl md:text-2xl font-black text-[#4da8ab] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">ترانيم</h1>
 
         <div className="flex items-center gap-1 md:gap-3">
-          <div className="relative flex items-center gap-3">
-            <button 
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)} 
-              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border-2 border-transparent hover:border-slate-200 dark:hover:border-slate-800"
-            >
-              <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-              </div>
-            </button>
-
-            {isDropdownOpen && (
-              <>
-                <div className="fixed inset-0 z-[110]" onClick={() => setIsDropdownOpen(false)} />
-                <div className="absolute left-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-100 dark:border-slate-800 z-[120] overflow-hidden flex flex-col py-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <button 
-                    onClick={() => { setIsDriveModalOpen(true); setIsDropdownOpen(false); }} 
-                    className="w-full text-right px-4 py-3 text-sm font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors flex items-center gap-3"
-                  >
-                    <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
-                    </svg>
-                    <div className="flex-1 flex flex-col items-start text-right">
-                      <span className="text-[13px] font-black">النسخ الاحتياطي والاستعادة</span>
-                      <div className="flex items-center gap-1.5 mt-0.5 opacity-60 text-[9px] font-bold">
-                        <span>آخر نسخة: {
-                          (() => {
-                            const lastTime = parseInt(localStorage.getItem('lastBackupTime') || '0');
-                            if (lastTime === 0) return 'أبداً';
-                            const diff = Date.now() - lastTime;
-                            const mins = Math.floor(diff / 60000);
-                            const hours = Math.floor(mins / 60);
-                            const days = Math.floor(hours / 24);
-                            if (days > 0) return `منذ ${days} يوم`;
-                            if (hours > 0) return `منذ ${hours} ساعة`;
-                            if (mins > 0) return `منذ ${mins} دقيقة`;
-                            return 'الآن';
-                          })()
-                        }</span>
-                        <span className="w-1 h-1 rounded-full bg-slate-300" />
-                        <span>{Math.max(0, tracks.length - parseInt(localStorage.getItem('tracksCountAtLastBackup') || '0'))} أناشيد جديدة</span>
-                      </div>
-                    </div>
-                  </button>
-                  
-                  <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                  
-                  <button onClick={() => { handleShare(); setIsDropdownOpen(false); }} className="w-full text-right px-4 py-3 text-sm font-bold text-slate-900 dark:text-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                    مشاركة التطبيق
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <UserBadge
+            user={user}
+            onLogout={handleLogout}
+            syncProgress={syncProgress}
+            onSyncNow={() => {
+              const savedToken = localStorage.getItem('google_access_token');
+              if (savedToken) {
+                handleStartSync(savedToken);
+              } else {
+                triggerGoogleLogin();
+              }
+            }}
+            tracks={tracks}
+            onOpenBackup={(mode) => {
+              setBackupModalMode(mode || null);
+              setIsDriveModalOpen(true);
+            }}
+            onGoogleLogin={triggerGoogleLogin}
+            isLoggingIn={isLoggingIn}
+            onShareApp={handleShare}
+          />
         </div>
       </header>
 
@@ -1471,7 +1710,10 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
               isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)}
               isRecording={isRecording} onStartRecording={handleStartRecording}
               showBackupReminder={showBackupReminder}
-              onOpenBackup={() => setIsDriveModalOpen(true)}
+              onOpenBackup={() => {
+                setBackupModalMode('backup');
+                setIsDriveModalOpen(true);
+              }}
               onEditTrack={handleOpenEditModal}
               className="fixed inset-y-0 right-0 h-full w-[85%] sm:w-[400px] shadow-2xl z-[200] lg:!relative lg:!w-full lg:!shadow-none lg:!z-10 lg:!inset-auto"
             />
@@ -1492,7 +1734,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
               <div className="w-full flex flex-col items-center space-y-6 md:space-y-10 animate-in fade-in duration-500">
                 <div className="relative group w-full max-w-[200px] md:max-w-[280px] lg:max-w-sm shrink-0">
                   <div className="relative aspect-square w-full overflow-hidden rounded-[40px] md:rounded-[50px] lg:rounded-[60px] shadow-2xl border-[4px] md:border-[6px] border-white dark:border-slate-900 group-hover:scale-[1.01] transition-all duration-500">
-                    <img src={currentTrack.coverUrl} className="w-full h-full object-cover" alt="" />
+                    <img src={currentTrack.coverUrl || undefined} className="w-full h-full object-cover" alt="" />
                     <button onClick={() => coverInputRef.current?.click()} className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white z-20 cursor-pointer">
                       <svg className="w-8 h-8 md:w-12 md:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                     </button>
@@ -1552,7 +1794,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       </div>
 
       <footer className={`fixed bottom-0 left-0 right-0 transition-all duration-500 z-[50] p-4 md:p-8 pointer-events-none mb-[env(safe-area-inset-bottom,0px)] max-w-[100vw] overflow-hidden ${isSidebarOpen ? 'opacity-0 invisible lg:opacity-100 lg:visible lg:pr-[400px]' : 'opacity-100 visible'}`}>
-        <audio ref={audioRef} src={currentTrack?.url} className="hidden" preload="auto" crossOrigin="anonymous" />
+        <audio ref={audioRef} src={currentTrack?.url || undefined} className="hidden" preload="auto" crossOrigin="anonymous" />
         
         {isBackupProcessing && (
           <div className="max-w-xs mx-auto mb-4 bg-[#4da8ab] text-white py-2 px-4 rounded-full shadow-lg flex items-center justify-center gap-3 animate-bounce pointer-events-auto border border-white/20">
@@ -1578,7 +1820,11 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
       <GoogleDriveBackupModal
         isOpen={isDriveModalOpen}
-        onClose={() => setIsDriveModalOpen(false)}
+        onClose={() => {
+          setIsDriveModalOpen(false);
+          setBackupModalMode(null);
+        }}
+        initialMode={backupModalMode}
         createBackupZip={createBackupZipBlob}
         restoreBackupZip={handleRestoreFromZipBlob}
         isBackupProcessing={isBackupProcessing}
@@ -1586,7 +1832,6 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         backupStatusMessage={backupStatusMessage}
         setBackupStatusMessage={setBackupStatusMessage}
         onBackupSuccess={recordSuccessfulBackup}
-        tracks={tracks}
         onCancelBackup={() => setBackupCancelSignal(true)}
       />
 
@@ -1683,6 +1928,18 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
           </div>
         )}
       </AnimatePresence>
+
+      {/* Onboarding Login Screen overlay */}
+      {!user && !isSkipLogin && (
+        <LoginScreen
+          onLogin={triggerGoogleLogin}
+          isLoading={isLoggingIn}
+          onSkip={() => {
+            setIsSkipLogin(true);
+            localStorage.setItem('skip_cloud_sync', 'true');
+          }}
+        />
+      )}
     </div>
   );
 };
