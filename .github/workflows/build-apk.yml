@@ -50,9 +50,27 @@ jobs:
       - name: Copy google-services.json
         run: cp google-services.json android/app/google-services.json
 
-      - name: Copy debug.keystore to Android project and user home
+      - name: Prepare debug.keystore (Decode from Secret or Generate)
         run: |
           mkdir -p ~/.android
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding debug.keystore from secrets.DEBUG_KEYSTORE_BASE64..."
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
+          elif [ -n "${{ secrets.DEBUG_KEYSTORE }}" ]; then
+            echo "Decoding debug.keystore from secrets.DEBUG_KEYSTORE..."
+            echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > debug.keystore
+          else
+            echo "Warning: No debug.keystore secret found. Generating a temporary debug.keystore..."
+            keytool -genkeypair \
+              -alias androiddebugkey \
+              -keypass android \
+              -keystore debug.keystore \
+              -storepass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+          fi
           cp debug.keystore ~/.android/debug.keystore
           cp debug.keystore android/app/debug.keystore
 
