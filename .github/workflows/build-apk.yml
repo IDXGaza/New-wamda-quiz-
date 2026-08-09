@@ -55,10 +55,10 @@ jobs:
           mkdir -p ~/.android
           if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
             echo "Decoding debug.keystore from secrets.DEBUG_KEYSTORE_BASE64..."
-            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 -di > debug.keystore
           elif [ -n "${{ secrets.DEBUG_KEYSTORE }}" ]; then
             echo "Decoding debug.keystore from secrets.DEBUG_KEYSTORE..."
-            echo "${{ secrets.DEBUG_KEYSTORE }}" | base64 -d > debug.keystore
+            echo "${{ secrets.DEBUG_KEYSTORE }}" | tr -d '\r\n ' | base64 -di > debug.keystore
           else
             echo "Warning: No debug.keystore secret found. Generating a temporary debug.keystore..."
             keytool -genkeypair \
