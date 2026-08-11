@@ -442,8 +442,12 @@ export const runCloudSync = async (
     return finalTracks;
   } catch (error: any) {
     console.error('Cloud Sync failed:', error);
-    onProgress?.({ status: 'error', message: `فشلت المزامنة: ${error?.message || error}`, progress: 100 });
-    throw error;
+    let errorMsg = error?.message || error;
+    if (errorMsg === 'ExpiredToken') {
+      errorMsg = 'انتهت صلاحية جلسة تسجيل الدخول. يرجى تسجيل الدخول مجدداً لتفعيل المزامنة السحابية.';
+    }
+    onProgress?.({ status: 'error', message: `فشلت المزامنة: ${errorMsg}`, progress: 100 });
+    throw new Error(errorMsg);
   } finally {
     isSyncing = false;
   }

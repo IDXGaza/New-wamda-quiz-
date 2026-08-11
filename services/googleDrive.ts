@@ -29,7 +29,10 @@ export const getAccessToken = async (): Promise<string> => {
       
       return accessToken;
     } catch (err: any) {
-      const msg = err?.message || err?.code || JSON.stringify(err) || 'خطأ غير معروف';
+      let msg = err?.message || err?.code || (typeof err === 'string' ? err : '');
+      if (!msg || msg === '{}' || msg === 'Something went wrong') {
+        msg = 'خطأ في إعدادات Google OAuth / SHA-1 أو الخادم (تأكد من مطابقة SHA-1 في Firebase Console و Google Cloud Console)';
+      }
       throw new Error(msg);
     }
   } else {
@@ -67,6 +70,46 @@ export const getAccessToken = async (): Promise<string> => {
   }
 };
 
+/**
+ * Safely parses response errors from Google Drive REST API.
+ */
+const handleDriveResponseError = async (response: Response, actionContext: string): Promise<never> => {
+  let errDetail = '';
+  try {
+    const errJson = await response.json();
+    errDetail = errJson?.error?.message || errJson?.error_description || '';
+  } catch {
+    try {
+      errDetail = await response.text();
+    } catch {
+      errDetail = '';
+    }
+  }
+
+  if (
+    response.status === 401 ||
+    errDetail.toLowerCase().includes('invalid credentials') ||
+    errDetail.toLowerCase().includes('unauthorized') ||
+    errDetail.toLowerCase().includes('token expired')
+  ) {
+    localStorage.removeItem('google_access_token');
+    localStorage.removeItem('google_token_acquired_at');
+    throw new Error('ExpiredToken');
+  }
+
+  if (
+    response.status === 403 ||
+    errDetail.toLowerCase().includes('insufficient') ||
+    errDetail.toLowerCase().includes('scope') ||
+    errDetail.toLowerCase().includes('permission')
+  ) {
+    throw new Error('صلاحية Google Drive غير كافية. يرجى تسجيل الخروج وإعادة تسجيل الدخول لمنح الصلاحيات السحابية.');
+  }
+
+  const msg = errDetail ? `${errDetail} (كود ${response.status})` : (response.statusText || `كود ${response.status}`);
+  throw new Error(`${actionContext}: ${msg}`);
+};
+
 export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string, customFilename?: string): Promise<any> => {
   const now = new Date();
   const datePart = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
@@ -96,9 +139,7 @@ export const uploadBackupToDrive = async (zipBlob: Blob, accessToken: string, cu
     body: multipartBody
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error('Google Drive Upload Error:', errorData);
-    throw new Error(`فشل الرفع: ${response.statusText} (${errorData?.error?.message || 'خطأ غير معروف'})`);
+    await handleDriveResponseError(response, 'فشل رفع النسخة الاحتياطية');
   }
   return await response.json();
 };
@@ -116,23 +157,17 @@ export const updateBackupInDrive = async (fileId: string, zipBlob: Blob, accessT
   });
   
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error('Google Drive Update Error:', errorData);
-    throw new Error(`فشل التحديث: ${response.statusText} (${errorData?.error?.message || 'خطأ غير معروف'})`);
+    await handleDriveResponseError(response, 'فشل تحديث النسخة الاحتياطية');
   }
   return await response.json();
 };
 
 export const listBackupsInDrive = async (accessToken: string): Promise<DriveBackupFile[]> => {
   const q = encodeURIComponent("(name contains 'traneem_backup' or name contains 'ترانيم') and mimeType = 'application/zip' and trashed = false");
-  // Use spaces=appDataFolder
   const url = `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=appDataFolder&orderBy=createdTime+desc&fields=files(id,name,size,createdTime)`;
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) {
-    if (response.status === 401) throw new Error('ExpiredToken');
-    const errorData = await response.json().catch(() => ({}));
-    console.error('Google Drive List Error:', errorData);
-    throw new Error(`فشل جلب الملفات: ${response.statusText} (${errorData?.error?.message || 'خطأ غير معروف'})`);
+    await handleDriveResponseError(response, 'فشل جلب قائمة النسخ الاحتياطية');
   }
   const data = await response.json();
   return data.files || [];
@@ -143,9 +178,7 @@ export const downloadBackupFromDrive = async (fileId: string, accessToken: strin
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error('Google Drive Download Error:', errorData);
-    throw new Error(`فشل التحميل: ${response.statusText} (${errorData?.error?.message || 'خطأ غير معروف'})`);
+    await handleDriveResponseError(response, 'فشل تحميل النسخة الاحتياطية');
   }
   return await response.blob();
 };
@@ -155,10 +188,8 @@ export const deleteBackupFromDrive = async (fileId: string, accessToken: string)
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    console.error('Google Drive Delete Error:', errorData);
-    throw new Error(`فشل الحذف: ${response.statusText} (${errorData?.error?.message || 'خطأ غير معروف'})`);
+  if (!response.ok && response.status !== 404) {
+    await handleDriveResponseError(response, 'فشل حذف النسخة الاحتياطية');
   }
 };
 
@@ -205,8 +236,7 @@ export const uploadFileToDrive = async (
   });
   
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`فشل الرفع ${filename}: ${response.statusText} (${errText})`);
+    await handleDriveResponseError(response, `فشل الرفع ${filename}`);
   }
   return response.json();
 };
@@ -229,8 +259,7 @@ export const updateFileInDrive = async (
     body: blob
   });
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`فشل تحديث الملف ${fileId}: ${response.statusText} (${errText})`);
+    await handleDriveResponseError(response, `فشل تحديث الملف ${fileId}`);
   }
   return response.json();
 };
@@ -243,7 +272,7 @@ export const downloadFileFromDrive = async (fileId: string, accessToken: string)
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!response.ok) {
-    throw new Error(`فشل تحميل الملف ${fileId}: ${response.statusText}`);
+    await handleDriveResponseError(response, `فشل تحميل الملف ${fileId}`);
   }
   return response.blob();
 };
@@ -265,7 +294,7 @@ export const findFileInDrive = async (filename: string, accessToken: string): Pr
   const url = `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=appDataFolder&fields=files(id,name)`;
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) {
-    throw new Error(`فشل البحث عن الملف ${filename}: ${response.statusText}`);
+    await handleDriveResponseError(response, `فشل البحث عن الملف ${filename}`);
   }
   const data = await response.json();
   if (data.files && data.files.length > 0) {
@@ -283,7 +312,7 @@ export const deleteFileFromDrive = async (fileId: string, accessToken: string): 
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   if (!response.ok && response.status !== 404) {
-    throw new Error(`فشل حذف الملف ${fileId}: ${response.statusText}`);
+    await handleDriveResponseError(response, `فشل حذف الملف ${fileId}`);
   }
 };
 

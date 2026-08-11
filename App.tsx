@@ -646,7 +646,11 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       }, 3500);
     } catch (err: any) {
       console.error('Auto sync failed:', err);
-      setSyncProgress({ status: 'error', message: `فشلت المزامنة: ${err.message || err}`, progress: 100 });
+      let errMsg = err?.message || err;
+      if (errMsg === 'ExpiredToken') {
+        errMsg = 'انتهت صلاحية جلسة تسجيل الدخول. يرجى إعادة تسجيل الدخول لمزامنة بياناتك.';
+      }
+      setSyncProgress({ status: 'error', message: `فشلت المزامنة: ${errMsg}`, progress: 100 });
     }
   };
 
