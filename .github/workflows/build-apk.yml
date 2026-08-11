@@ -25,12 +25,6 @@ jobs:
         run: npm run build
 
       - name: Setup Java
-        uses: android-actions/setup-android@v3 # Note: wait, original had separate java, let's copy user's snippet exactly as requested!
-        # Ah, the user specified setup Java then Setup Android SDK. Let's write the exact code the user provided!
-        # "احذف كل الكود في ملف build apk.yml و استبدله هذا" (Delete all code in build apk.yml and replace it with this)
-        # Let's write exactly what the user wrote.
-
-      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -47,8 +41,21 @@ jobs:
           rm -rf android
           npx cap add android
 
-      - name: Copy google-services.json
-        run: cp google-services.json android/app/google-services.json
+      - name: Prepare google-services.json
+        run: |
+          mkdir -p android/app
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
+            echo "Decoding google-services.json from secrets.GOOGLE_SERVICES_JSON_BASE64..."
+            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | tr -d '\r\n ' | base64 -di > android/app/google-services.json
+          elif [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo "Writing google-services.json from secrets.GOOGLE_SERVICES_JSON..."
+            echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+          elif [ -f "google-services.json" ]; then
+            echo "Copying google-services.json from repository root..."
+            cp google-services.json android/app/google-services.json
+          else
+            echo "Warning: No google-services.json found in root or secrets."
+          fi
 
       - name: Prepare debug.keystore (Decode from Secret or Generate)
         run: |
