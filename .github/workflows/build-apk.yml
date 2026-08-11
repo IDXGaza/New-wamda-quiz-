@@ -43,41 +43,80 @@ jobs:
 
       - name: Prepare google-services.json
         run: |
-          mkdir -p android/app
-          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
-            echo "Decoding google-services.json from secrets.GOOGLE_SERVICES_JSON_BASE64..."
-            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | tr -d '\r\n ' | base64 -di > android/app/google-services.json
-          elif [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
-            echo "Writing google-services.json from secrets.GOOGLE_SERVICES_JSON..."
-            echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
-          elif [ -f "google-services.json" ]; then
-            echo "Copying google-services.json from repository root..."
-            cp google-services.json android/app/google-services.json
-          else
-            echo "Warning: No google-services.json found in root or secrets."
-          fi
+          python3 -c '
+          import base64, os
+
+          os.makedirs("android/app", exist_ok=True)
+
+          s_b64 = """${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}""".strip()
+          s_json = """${{ secrets.GOOGLE_SERVICES_JSON }}""".strip()
+
+          def try_decode(s):
+              if not s:
+                  return None
+              try:
+                  clean = "".join(s.split())
+                  missing_padding = len(clean) % 4
+                  if missing_padding:
+                      clean += "=" * (4 - missing_padding)
+                  data = base64.b64decode(clean)
+                  if len(data) > 0 and (b"{" in data or b"project_info" in data):
+                      return data
+              except Exception:
+                  pass
+              return None
+
+          decoded = try_decode(s_b64)
+          if decoded:
+              print("Decoded google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret.")
+              with open("android/app/google-services.json", "wb") as f:
+                  f.write(decoded)
+          elif s_json:
+              print("Writing google-services.json from GOOGLE_SERVICES_JSON secret.")
+              with open("android/app/google-services.json", "w") as f:
+                  f.write(s_json)
+          elif os.path.exists("google-services.json"):
+              print("Copying google-services.json from repository root...")
+              with open("google-services.json", "rb") as f_in, open("android/app/google-services.json", "wb") as f_out:
+                  f_out.write(f_in.read())
+          else:
+              print("Warning: No google-services.json found.")
+          '
 
       - name: Prepare debug.keystore (Decode from Secret or Generate)
         run: |
           mkdir -p ~/.android
-          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
-            echo "Decoding debug.keystore from secrets.DEBUG_KEYSTORE_BASE64..."
-            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 -di > debug.keystore
-          elif [ -n "${{ secrets.DEBUG_KEYSTORE }}" ]; then
-            echo "Decoding debug.keystore from secrets.DEBUG_KEYSTORE..."
-            echo "${{ secrets.DEBUG_KEYSTORE }}" | tr -d '\r\n ' | base64 -di > debug.keystore
-          else
-            echo "Warning: No debug.keystore secret found. Generating a temporary debug.keystore..."
-            keytool -genkeypair \
-              -alias androiddebugkey \
-              -keypass android \
-              -keystore debug.keystore \
-              -storepass android \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000
-          fi
+          python3 -c '
+          import base64, os
+
+          s_b64 = """${{ secrets.DEBUG_KEYSTORE_BASE64 }}""".strip()
+          s_raw = """${{ secrets.DEBUG_KEYSTORE }}""".strip()
+
+          def try_decode(s):
+              if not s:
+                  return None
+              try:
+                  clean = "".join(s.split())
+                  missing_padding = len(clean) % 4
+                  if missing_padding:
+                      clean += "=" * (4 - missing_padding)
+                  data = base64.b64decode(clean)
+                  if len(data) > 0:
+                      return data
+              except Exception as e:
+                  print("Base64 decode warning:", e)
+              return None
+
+          data = try_decode(s_b64) or try_decode(s_raw)
+
+          if data:
+              print("Successfully decoded debug.keystore from secrets.")
+              with open("debug.keystore", "wb") as f:
+                  f.write(data)
+          else:
+              print("No valid debug.keystore secret found or decode failed. Generating temporary debug.keystore...")
+              os.system("""keytool -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000""")
+          '
           cp debug.keystore ~/.android/debug.keystore
           cp debug.keystore android/app/debug.keystore
 
