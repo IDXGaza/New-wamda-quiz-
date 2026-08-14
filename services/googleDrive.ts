@@ -14,8 +14,8 @@ export const getAccessToken = async (): Promise<string> => {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
       await GoogleAuth.initialize({
         clientId: '911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com',
-        scopes: ['profile', 'email', 'https://www.googleapis.com/auth/drive.appdata'],
-        grantOfflineAccess: true
+        scopes: ['profile', 'email'],
+        grantOfflineAccess: false
       });
       const user = await GoogleAuth.signIn() as any;
       const accessToken = user?.authentication?.accessToken;
