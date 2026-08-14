@@ -120,6 +120,16 @@ jobs:
           cp debug.keystore ~/.android/debug.keystore
           cp debug.keystore android/app/debug.keystore
 
+      - name: Print Keystore SHA-1 and SHA-256 Fingerprints
+        run: |
+          echo "==================== ANDROID KEYSTORE FINGERPRINTS ===================="
+          keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android
+          echo "======================================================================="
+          echo "==================== DEBUG_KEYSTORE_BASE64 (Copy to GitHub Secrets if needed) ===================="
+          base64 -w 0 debug.keystore || base64 debug.keystore
+          echo ""
+          echo "==================================================================================================="
+
       - name: Register GoogleAuth plugin in MainActivity
         run: |
           cat > android/app/src/main/java/com/idxgaza/traneem/MainActivity.kt << 'EOF'
@@ -160,3 +170,9 @@ jobs:
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload debug.keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-keystore
+          path: debug.keystore
