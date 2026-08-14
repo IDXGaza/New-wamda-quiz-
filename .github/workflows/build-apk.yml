@@ -155,6 +155,29 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Configure strings.xml for GoogleAuth
+        run: |
+          mkdir -p android/app/src/main/res/values
+          if [ -f android/app/src/main/res/values/strings.xml ]; then
+            if grep -q "server_client_id" android/app/src/main/res/values/strings.xml; then
+              sed -i 's|<string name="server_client_id">.*</string>|<string name="server_client_id">911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com</string>|' android/app/src/main/res/values/strings.xml
+            else
+              sed -i 's|</resources>|    <string name="server_client_id">911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com</string>\n</resources>|' android/app/src/main/res/values/strings.xml
+            fi
+          else
+            cat > android/app/src/main/res/values/strings.xml << 'EOF'
+          <?xml version='1.0' encoding='utf-8'?>
+          <resources>
+              <string name="app_name">ترانيم</string>
+              <string name="title_activity_main">ترانيم</string>
+              <string name="package_name">com.idxgaza.traneem</string>
+              <string name="custom_url_scheme">com.idxgaza.traneem</string>
+              <string name="server_client_id">911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com</string>
+          </resources>
+          EOF
+          fi
+          cat android/app/src/main/res/values/strings.xml
+
       - name: Verify GoogleAuth plugin
         run: |
           cat android/app/src/main/java/com/idxgaza/traneem/MainActivity.kt
