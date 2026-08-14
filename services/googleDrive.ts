@@ -12,7 +12,11 @@ export const getAccessToken = async (): Promise<string> => {
   if (Capacitor.isNativePlatform()) {
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-      await GoogleAuth.initialize();
+      await GoogleAuth.initialize({
+        clientId: '911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com',
+        scopes: ['profile', 'email', 'https://www.googleapis.com/auth/drive.appdata'],
+        grantOfflineAccess: true
+      });
       const user = await GoogleAuth.signIn() as any;
       const accessToken = user?.authentication?.accessToken;
       if (!accessToken) throw new Error('accessToken فارغ');
@@ -29,9 +33,21 @@ export const getAccessToken = async (): Promise<string> => {
       
       return accessToken;
     } catch (err: any) {
-      let msg = err?.message || err?.code || (typeof err === 'string' ? err : '');
-      if (!msg || msg === '{}' || msg === 'Something went wrong') {
-        msg = 'خطأ في إعدادات Google OAuth / SHA-1 أو الخادم (تأكد من مطابقة SHA-1 في Firebase Console و Google Cloud Console)';
+      console.error('Android GoogleAuth Error:', err);
+      const errCode = String(err?.code || err?.statusCode || '');
+      const rawMsg = String(err?.message || (typeof err === 'string' ? err : ''));
+      
+      let msg = '';
+      if (errCode === '10' || rawMsg.includes('10')) {
+        msg = 'كود (10 - DEVELOPER_ERROR): عدم تطابق بصمة SHA-1 أو لم يتم تفعيل Google Drive API في Google Cloud Console.';
+      } else if (errCode === '12500' || rawMsg.includes('12500')) {
+        msg = 'كود (12500 - SIGN_IN_FAILED): يرجى تفعيل شاشة OAuth أو إضافة بريدك الإلكتروني كـ Test User في Google Cloud Console.';
+      } else if (errCode === '7' || rawMsg.includes('7')) {
+        msg = 'كود (7 - NETWORK_ERROR): خطأ في الاتصال بخوادم Google، تحقق من شبكة الإنترنت.';
+      } else if (rawMsg.includes('canceled') || errCode === '12501' || rawMsg.includes('12501')) {
+        msg = 'تم إلغاء تسجيل الدخول من قبل المستخدم.';
+      } else {
+        msg = rawMsg && rawMsg !== '{}' ? `${rawMsg} (كود: ${errCode || 'غير محدد'})` : 'خطأ غير محدد أثناء المصادقة.';
       }
       throw new Error(msg);
     }
