@@ -98,15 +98,25 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       
       const provider = new GoogleAuthProvider();
       provider.addScope('https://www.googleapis.com/auth/drive.appdata');
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
       
       let result;
       try {
         result = await signInWithPopup(auth, provider);
       } catch (popupErr: any) {
-        // If popup is blocked or fails on mobile browser, fallback to redirect
+        console.warn('Popup attempt result/fallback to redirect:', popupErr);
         const errCode = popupErr?.code || '';
-        if (errCode === 'auth/popup-blocked' || errCode === 'auth/cancelled-popup-request') {
-          console.warn('Popup blocked or cancelled, falling back to signInWithRedirect...');
+        // Try redirect if popup failed, closed or blocked
+        if (
+          errCode === 'auth/popup-blocked' || 
+          errCode === 'auth/cancelled-popup-request' || 
+          errCode === 'auth/popup-closed-by-user' ||
+          errCode === 'auth/internal-error' ||
+          errCode.includes('popup')
+        ) {
+          console.warn('Opening Google Sign-In via full browser redirect...');
           await signInWithRedirect(auth, provider);
           return '';
         }
@@ -117,7 +127,7 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       const accessToken = credential?.accessToken;
       
       if (!accessToken) {
-        throw new Error('فشل الحصول على رمز الوصول من قوقل (Access Token). تأكد من إعداد نطاقات الوصول (Scopes).');
+        throw new Error('فشل الحصول على رمز الوصول من قوقل (Access Token).');
       }
 
       localStorage.setItem('google_access_token', accessToken);
@@ -130,15 +140,17 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       const errorMsg = err?.message || '';
       
       if (errorCode === 'auth/cancelled-popup-request' || errorMsg.includes('cancelled-popup-request')) {
-        friendlyMsg = 'تم إلغاء طلب تسجيل الدخول بسبب تداخل مع نافذة أخرى أو إغلاقها (يرجى المحاولة مجدداً).';
+        friendlyMsg = 'تم إلغاء طلب تسجيل الدخول أو استبداله.';
       } else if (errorCode === 'auth/popup-closed-by-user' || errorMsg.includes('popup-closed-by-user')) {
         friendlyMsg = 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية.';
       } else if (errorCode === 'auth/popup-blocked' || errorMsg.includes('popup-blocked')) {
-        friendlyMsg = 'تم حظر نافذة تسجيل الدخول المنبثقة من قبل متصفحك. يرجى السماح بالنوافذ المنبثقة وحاول مجدداً.';
+        friendlyMsg = 'تم حظر نافذة تسجيل الدخول المنبثقة من قبل المتصفح.';
+      } else if (errorCode === 'auth/unauthorized-domain' || errorMsg.includes('unauthorized-domain')) {
+        friendlyMsg = 'النطاق الحالي غير مصرح له في إعدادات Firebase Auth. يرجى إضافة النطاق إلى Authorized Domains.';
       } else {
         friendlyMsg = errorMsg || errorCode || 'خطأ غير معروف في المصادقة.';
       }
-      throw new Error(`فشل تسجيل الدخول بالويب: ${friendlyMsg}`);
+      throw new Error(`فشل تسجيل الدخول: ${friendlyMsg}`);
     }
   }
 };
