@@ -125,10 +125,8 @@ jobs:
           echo "==================== ANDROID KEYSTORE FINGERPRINTS ===================="
           keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android
           echo "======================================================================="
-          echo "==================== DEBUG_KEYSTORE_BASE64 (Copy to GitHub Secrets if needed) ===================="
-          base64 -w 0 debug.keystore || base64 debug.keystore
-          echo ""
-          echo "==================================================================================================="
+          base64 -w 0 debug.keystore > keystore_base64.txt || base64 debug.keystore > keystore_base64.txt
+          echo "Keystore base64 saved to keystore_base64.txt and uploaded to Artifacts."
 
       - name: Configure MainActivity and GoogleAuth
         run: |
@@ -201,4 +199,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debug-keystore
-          path: debug.keystore
+          path: |
+            debug.keystore
+            keystore_base64.txt
