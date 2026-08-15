@@ -180,9 +180,10 @@ jobs:
           fi
           cat android/app/src/main/res/values/strings.xml
 
-      - name: Verify GoogleAuth plugin
+      - name: Verify GoogleAuth plugin and Configure Signing
         run: |
           cat android/app/src/main/java/com/idxgaza/traneem/MainActivity.java
+          cp debug.keystore android/app/debug.keystore
 
       - name: Build APK
         run: |

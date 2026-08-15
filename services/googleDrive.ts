@@ -7,7 +7,7 @@ export interface DriveBackupFile {
   createdTime: string;
 }
 
-// Modern Authentication with Native GoogleAuth and automatic Firebase Web fallback
+// Modern Authentication with Native GoogleAuth on Android and Firebase Auth on Web
 export const getAccessToken = async (): Promise<string> => {
   if (Capacitor.isNativePlatform()) {
     try {
@@ -19,7 +19,7 @@ export const getAccessToken = async (): Promise<string> => {
       } as any);
       const user = await GoogleAuth.signIn() as any;
       const accessToken = user?.authentication?.accessToken || user?.authentication?.idToken;
-      if (!accessToken) throw new Error('فشل استلام رمز المصادقة');
+      if (!accessToken) throw new Error('فشل استلام رمز المصادقة من جوجل');
       
       if (user) {
         const traneemUser = {
@@ -33,49 +33,19 @@ export const getAccessToken = async (): Promise<string> => {
       
       return accessToken;
     } catch (err: any) {
-      console.warn('Native GoogleAuth failed, trying Firebase Web Auth fallback...', err);
-      // Automatic fallback to Firebase Web Auth on native platforms
-      try {
-        const { auth } = await import('../firebase');
-        const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-        
-        const provider = new GoogleAuthProvider();
-        provider.addScope('https://www.googleapis.com/auth/drive.appdata');
-        provider.setCustomParameters({ prompt: 'select_account' });
-        
-        const result = await signInWithPopup(auth, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        const accessToken = credential?.accessToken;
-        
-        if (result?.user) {
-          const traneemUser = {
-            displayName: result.user.displayName || 'مستخدم ترانيم',
-            email: result.user.email || '',
-            photoURL: result.user.photoURL || '',
-            uid: result.user.uid || ''
-          };
-          localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
-        }
-
-        if (accessToken) {
-          return accessToken;
-        }
-      } catch (fallbackErr: any) {
-        console.error('Firebase Web Auth fallback failed too:', fallbackErr);
-      }
-
+      console.error('Android GoogleAuth Error:', err);
       const errCode = String(err?.code || err?.statusCode || '');
       const rawMsg = String(err?.message || (typeof err === 'string' ? err : ''));
       
       let msg = '';
       if (errCode === '10' || rawMsg.includes('10')) {
-        msg = 'كود (10 - DEVELOPER_ERROR): تعذر الاتصال بحساب Google. يرجى التأكد من اتصال الإنترنت أو استخدام تسجيل الدخول المباشر.';
+        msg = 'كود (10 - DEVELOPER_ERROR): عدم تطابق بصمة SHA-1 أو إعدادات Google Cloud للمشروع.';
       } else if (errCode === '12500' || rawMsg.includes('12500')) {
-        msg = 'كود (12500 - SIGN_IN_FAILED): يرجى مراجعة صلاحيات الحساب والمحاولة مجدداً.';
+        msg = 'كود (12500 - SIGN_IN_FAILED): يرجى مراجعة إعدادات شاشة OAuth أو حسابك.';
       } else if (errCode === '7' || rawMsg.includes('7')) {
-        msg = 'كود (7 - NETWORK_ERROR): خطأ في الاتصال بخوادم Google، تحقق من شبكة الإنترنت.';
+        msg = 'كود (7 - NETWORK_ERROR): خطأ في الاتصال بخوادم Google.';
       } else if (rawMsg.includes('canceled') || errCode === '12501' || rawMsg.includes('12501')) {
-        msg = 'تم إلغاء تسجيل الدخول من قبل المستخدم.';
+        msg = 'تم إلغاء تسجيل الدخول.';
       } else {
         msg = rawMsg && rawMsg !== '{}' ? `${rawMsg}` : 'حدث خطأ أثناء المصادقة.';
       }
