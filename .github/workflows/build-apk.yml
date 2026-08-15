@@ -130,19 +130,21 @@ jobs:
           echo ""
           echo "==================================================================================================="
 
-      - name: Register GoogleAuth plugin in MainActivity
+      - name: Configure MainActivity and GoogleAuth
         run: |
-          cat > android/app/src/main/java/com/idxgaza/traneem/MainActivity.kt << 'EOF'
-          package com.idxgaza.traneem
+          rm -f android/app/src/main/java/com/idxgaza/traneem/MainActivity.kt
+          cat > android/app/src/main/java/com/idxgaza/traneem/MainActivity.java << 'EOF'
+          package com.idxgaza.traneem;
 
-          import android.os.Bundle
-          import com.codetrixstudio.capacitor.GoogleAuth.GoogleAuth
-          import com.getcapacitor.BridgeActivity
+          import android.os.Bundle;
+          import com.codetrixstudio.capacitor.GoogleAuth.GoogleAuth;
+          import com.getcapacitor.BridgeActivity;
 
-          class MainActivity : BridgeActivity() {
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  registerPlugin(GoogleAuth::class.java)
-                  super.onCreate(savedInstanceState)
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  registerPlugin(GoogleAuth.class);
+                  super.onCreate(savedInstanceState);
               }
           }
           EOF
