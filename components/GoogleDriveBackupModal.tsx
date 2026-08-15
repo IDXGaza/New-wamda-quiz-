@@ -95,33 +95,46 @@ export default function GoogleDriveBackupModal({
           }
         }
 
-        const { Share } = await import('@capacitor/share');
-        setBackupStatusMessage('جاري فتح قائمة الحفظ والمشاركة...');
-        await Share.share({
-          title: 'نسخة ترانيم الاحتياطية',
-          text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات',
-          url: firstChunkUri,
-          dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
-        });
-        setBackupStatusMessage('تم حفظ ومشاركة النسخة بنجاح! 🎉');
+        try {
+          const { Share } = await import('@capacitor/share');
+          setBackupStatusMessage('جاري فتح قائمة الحفظ والمشاركة...');
+          await Share.share({
+            title: 'نسخة ترانيم الاحتياطية',
+            text: 'ملف النسخة الاحتياطية للأناشيد والتسجيلات',
+            url: firstChunkUri,
+            dialogTitle: 'حفظ أو مشاركة ملف النسخة الاحتياطية'
+          });
+        } catch (shareErr) {
+          console.warn('Native share dialog dismissed or unsupported, file written to Documents:', shareErr);
+        }
+        setBackupStatusMessage('تم حفظ ملف النسخة بنجاح في المستندات! 🎉');
       } else {
         const file = new File([zipBlob], exportName, { type: "application/zip" });
-        const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        
-        if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: "نسخة ترانيم الاحتياطية" });
-          setBackupStatusMessage('تمت مشاركة وحفظ الملف بنجاح! 🎉');
-        } else {
+        let shared = false;
+
+        if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: "نسخة ترانيم الاحتياطية" });
+            shared = true;
+            setBackupStatusMessage('تمت مشاركة وحفظ الملف بنجاح! 🎉');
+          } catch (shareErr: any) {
+            if (shareErr.name !== 'AbortError') {
+              console.warn('Navigator share error, falling back to direct download:', shareErr);
+            }
+          }
+        }
+
+        if (!shared) {
           const url = URL.createObjectURL(zipBlob);
           const link = document.createElement('a');
           link.href = url;
           link.download = exportName;
-          link.style.display = 'none';
+          link.setAttribute('download', exportName);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(url), 100);
-          setBackupStatusMessage('تم تنزيل النسخة الاحتياطية بنجاح! ✅');
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          setBackupStatusMessage('تم تنزيل وحفظ النسخة الاحتياطية بنجاح! ✅');
         }
       }
       onBackupSuccess();

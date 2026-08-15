@@ -91,9 +91,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     .map((track, originalIndex) => ({ track, originalIndex }))
     .filter(item => {
       const normalizedSearch = normalizeArabic(searchTerm);
-      if (!normalizedSearch) return (view === 'all' || 
+      const matchesType = view === 'all' || 
                          (view === 'record' && item.track.sourceType === 'record') ||
-                         (view === 'import' && (item.track.sourceType === 'import' || !item.track.sourceType)));
+                         (view === 'import' && (item.track.sourceType === 'import' || !item.track.sourceType));
+
+      if (!normalizedSearch) return matchesType;
                          
       const searchWords = normalizedSearch.split(/\s+/);
       const trackNameNormalized = normalizeArabic(item.track.name);
@@ -103,14 +105,16 @@ const Sidebar: React.FC<SidebarProps> = ({
         trackNameNormalized.includes(word) || trackArtistNormalized.includes(word)
       );
       
-      const matchesType = view === 'all' || 
-                         (view === 'record' && item.track.sourceType === 'record') ||
-                         (view === 'import' && (item.track.sourceType === 'import' || !item.track.sourceType));
-      
       return matchesSearch && matchesType;
     })
     .sort((a, b) => {
-      // Respect literal order for natural drag and drop
+      // Prioritize favorites at the top of the list
+      const aFav = a.track.isFavorite ? 1 : 0;
+      const bFav = b.track.isFavorite ? 1 : 0;
+      if (aFav !== bFav) {
+        return bFav - aFav;
+      }
+      // Respect literal user order within favorites / non-favorites
       return (a.track.order ?? 0) - (b.track.order ?? 0);
     }), [tracks, searchTerm, view]);
 

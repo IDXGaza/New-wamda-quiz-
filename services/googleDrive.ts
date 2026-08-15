@@ -8,7 +8,7 @@ export interface DriveBackupFile {
 }
 
 // Modern Authentication with Native GoogleAuth on Android and Firebase Auth on Web
-export const getAccessToken = async (): Promise<string> => {
+export const getAccessToken = async (forceInteractive: boolean = false): Promise<string> => {
   if (Capacitor.isNativePlatform()) {
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
@@ -17,10 +17,36 @@ export const getAccessToken = async (): Promise<string> => {
         scopes: ['https://www.googleapis.com/auth/drive.appdata'],
         grantOfflineAccess: false
       } as any);
+
+      // If not forced interactive, try silent refresh first
+      if (!forceInteractive) {
+        try {
+          const authData = await GoogleAuth.refresh();
+          const refreshedToken = authData?.accessToken || authData?.idToken;
+          if (refreshedToken) {
+            localStorage.setItem('google_access_token', refreshedToken);
+            localStorage.setItem('google_token_acquired_at', Date.now().toString());
+            return refreshedToken;
+          }
+        } catch (silentErr) {
+          console.warn('Silent refresh did not return token, falling back:', silentErr);
+        }
+
+        // Check if stored token is still fresh (< 45 minutes)
+        const storedToken = localStorage.getItem('google_access_token');
+        const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
+        if (storedToken && Date.now() - acquiredAt < 45 * 60 * 1000) {
+          return storedToken;
+        }
+      }
+
       const user = await GoogleAuth.signIn() as any;
       const accessToken = user?.authentication?.accessToken || user?.authentication?.idToken;
       if (!accessToken) throw new Error('فشل استلام رمز المصادقة من جوجل');
       
+      localStorage.setItem('google_access_token', accessToken);
+      localStorage.setItem('google_token_acquired_at', Date.now().toString());
+
       if (user) {
         const traneemUser = {
           displayName: user.displayName || (user.givenName + " " + user.familyName) || 'مستخدم ترانيم',
@@ -52,20 +78,51 @@ export const getAccessToken = async (): Promise<string> => {
       throw new Error(msg);
     }
   } else {
+    // Web platform
+    const storedToken = localStorage.getItem('google_access_token');
+    const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
+    const isTokenFresh = storedToken && (Date.now() - acquiredAt < 50 * 60 * 1000);
+
+    if (!forceInteractive && isTokenFresh && storedToken) {
+      return storedToken;
+    }
+
+    if (!forceInteractive && !isTokenFresh) {
+      // In background web mode without user interaction (e.g. auto sync timer)
+      throw new Error('ExpiredToken');
+    }
+
     try {
       const { auth } = await import('../firebase');
-      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const { signInWithPopup, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
       
       const provider = new GoogleAuthProvider();
       provider.addScope('https://www.googleapis.com/auth/drive.appdata');
       
-      const result = await signInWithPopup(auth, provider);
+      let result;
+      try {
+        result = await signInWithPopup(auth, provider);
+      } catch (popupErr: any) {
+        // If popup is blocked or fails on mobile browser, fallback to redirect
+        const errCode = popupErr?.code || '';
+        if (errCode === 'auth/popup-blocked' || errCode === 'auth/cancelled-popup-request') {
+          console.warn('Popup blocked or cancelled, falling back to signInWithRedirect...');
+          await signInWithRedirect(auth, provider);
+          return '';
+        }
+        throw popupErr;
+      }
+
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const accessToken = credential?.accessToken;
       
       if (!accessToken) {
         throw new Error('فشل الحصول على رمز الوصول من قوقل (Access Token). تأكد من إعداد نطاقات الوصول (Scopes).');
       }
+
+      localStorage.setItem('google_access_token', accessToken);
+      localStorage.setItem('google_token_acquired_at', Date.now().toString());
+
       return accessToken;
     } catch (err: any) {
       let friendlyMsg = '';

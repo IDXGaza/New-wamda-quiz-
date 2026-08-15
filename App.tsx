@@ -606,8 +606,29 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   const touchStartYRef = useRef<number | null>(null);
   const isSwipeCancelledRef = useRef<boolean>(false);
   
-  // Handle initial firebase auth listener
+  // Handle initial firebase auth listener and redirect authentication results
   useEffect(() => {
+    // Check if returning from a browser redirect sign-in flow
+    if (!Capacitor.isNativePlatform()) {
+      import('firebase/auth').then(({ getRedirectResult, GoogleAuthProvider }) => {
+        getRedirectResult(auth)
+          .then((result) => {
+            if (result) {
+              const credential = GoogleAuthProvider.credentialFromResult(result);
+              const accessToken = credential?.accessToken;
+              if (accessToken) {
+                localStorage.setItem('google_access_token', accessToken);
+                localStorage.setItem('google_token_acquired_at', Date.now().toString());
+                handleStartSync(accessToken);
+              }
+            }
+          })
+          .catch((err) => {
+            console.warn('Redirect auth result error:', err);
+          });
+      });
+    }
+
     return onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         const traneemUser = {
@@ -625,9 +646,15 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
     });
   }, []);
 
-  const handleStartSync = async (token: string) => {
+  const handleStartSync = async (providedToken?: string, forceInteractive: boolean = false) => {
     try {
       setSyncProgress({ status: 'checking', message: 'جاري بدء المزامنة السحابية...', progress: 15 });
+      
+      let token = providedToken;
+      if (!token) {
+        token = await getAccessToken(forceInteractive);
+      }
+      
       const syncedTracks = await runCloudSync(token, (prog) => {
         setSyncProgress(prog);
       });
@@ -645,19 +672,30 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         setSyncProgress(prev => prev.status === 'completed' ? { status: 'idle', message: '', progress: 0 } : prev);
       }, 3500);
     } catch (err: any) {
-      console.error('Auto sync failed:', err);
+      console.warn('Sync attempt failed:', err);
       let errMsg = err?.message || err;
-      if (errMsg === 'ExpiredToken') {
-        errMsg = 'انتهت صلاحية جلسة تسجيل الدخول. يرجى إعادة تسجيل الدخول لمزامنة بياناتك.';
+      if (errMsg === 'ExpiredToken' || String(errMsg).includes('ExpiredToken')) {
+        if (Capacitor.isNativePlatform() && !forceInteractive) {
+          // Attempt immediate silent refresh on Android
+          try {
+            const freshToken = await getAccessToken(false);
+            if (freshToken && freshToken !== providedToken) {
+              return await handleStartSync(freshToken, false);
+            }
+          } catch (silentErr) {
+            console.warn('Silent refresh attempt finished:', silentErr);
+          }
+        }
+        errMsg = 'انتهت صلاحية جلسة المزامنة. اضغط على شارة الحساب لتجديد تسجيل الدخول.';
       }
-      setSyncProgress({ status: 'error', message: `فشلت المزامنة: ${errMsg}`, progress: 100 });
+      setSyncProgress({ status: 'error', message: `حالة المزامنة: ${errMsg}`, progress: 100 });
     }
   };
 
   const triggerGoogleLogin = async () => {
     setIsLoggingIn(true);
     try {
-      const token = await getAccessToken();
+      const token = await getAccessToken(true);
       localStorage.setItem('google_access_token', token);
       localStorage.setItem('google_token_acquired_at', Date.now().toString());
       localStorage.removeItem('skip_cloud_sync');
@@ -737,19 +775,22 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   };
 
   const triggerAutoSyncWithCloud = useCallback(() => {
-    const savedToken = localStorage.getItem('google_access_token');
-    const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
-    const isExpired = Date.now() - acquiredAt > 50 * 60 * 1000;
-    
-    if (!user || isSkipLogin || !savedToken || isExpired) return;
+    if (!user || isSkipLogin) return;
 
     if (syncDebounceRef.current) {
       clearTimeout(syncDebounceRef.current);
     }
 
-    syncDebounceRef.current = setTimeout(() => {
+    syncDebounceRef.current = setTimeout(async () => {
       console.log('Debounced auto-sync triggered...');
-      handleStartSync(savedToken);
+      try {
+        const token = await getAccessToken(false);
+        if (token) {
+          await handleStartSync(token, false);
+        }
+      } catch (e) {
+        console.log('Auto sync silent check skipped:', e);
+      }
     }, 8000);
   }, [user, isSkipLogin]);
 
@@ -766,17 +807,18 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
   // Handle auto-sync on mount
   useEffect(() => {
     const checkAndInitSync = async () => {
-      const savedToken = localStorage.getItem('google_access_token');
-      const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
-      const isExpired = Date.now() - acquiredAt > 50 * 60 * 1000;
-      
-      if (savedToken && !isExpired && user && !isSkipLogin) {
-        await handleStartSync(savedToken);
-      } else if (user && !isSkipLogin) {
+      if (!user || isSkipLogin) return;
+      try {
+        const token = await getAccessToken(false);
+        if (token) {
+          await handleStartSync(token, false);
+        }
+      } catch (err) {
+        console.log('Initial sync check finished without blocking:', err);
         setSyncProgress({
-          status: 'error',
-          message: 'انتهت صلاحية الجلسة السحابية. اضغط لتجديدها ومزامنة بياناتك.',
-          progress: 100
+          status: 'idle',
+          message: '',
+          progress: 0
         });
       }
     };
@@ -1730,12 +1772,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
             onLogout={handleLogout}
             syncProgress={syncProgress}
             onSyncNow={() => {
-              const savedToken = localStorage.getItem('google_access_token');
-              if (savedToken) {
-                handleStartSync(savedToken);
-              } else {
-                triggerGoogleLogin();
-              }
+              handleStartSync(undefined, true);
             }}
             tracks={tracks}
             onOpenBackup={(mode) => {
