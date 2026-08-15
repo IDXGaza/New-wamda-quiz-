@@ -83,7 +83,7 @@ jobs:
               print("Warning: No google-services.json found.")
           '
 
-      - name: Prepare debug.keystore (Decode from Secret or Generate)
+      - name: Prepare debug.keystore (Decode from Secret or Use Fixed Keystore)
         run: |
           mkdir -p ~/.android
           python3 -c '
@@ -113,8 +113,16 @@ jobs:
               print("Successfully decoded debug.keystore from secrets.")
               with open("debug.keystore", "wb") as f:
                   f.write(data)
+          elif os.path.exists("debug.keystore") and os.path.getsize("debug.keystore") > 500:
+              print("Using pre-existing debug.keystore from repository.")
+          elif os.path.exists("keystore_fixed.b64"):
+              print("Decoding fixed debug.keystore from repository...")
+              with open("keystore_fixed.b64", "r") as f_in:
+                  fixed_data = base64.b64decode(f_in.read().strip())
+                  with open("debug.keystore", "wb") as f_out:
+                      f_out.write(fixed_data)
           else:
-              print("No valid debug.keystore secret found or decode failed. Generating temporary debug.keystore...")
+              print("Generating debug.keystore fallback...")
               os.system("""keytool -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000""")
           '
           cp debug.keystore ~/.android/debug.keystore
