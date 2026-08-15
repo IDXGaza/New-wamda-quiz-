@@ -182,7 +182,7 @@ jobs:
 
       - name: Verify GoogleAuth plugin
         run: |
-          cat android/app/src/main/java/com/idxgaza/traneem/MainActivity.kt
+          cat android/app/src/main/java/com/idxgaza/traneem/MainActivity.java
 
       - name: Build APK
         run: |
