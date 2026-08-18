@@ -97,38 +97,10 @@ const initDB = (): Promise<IDBDatabase> => {
   });
 };
 
-const blobToArrayBuffer = (blob: Blob): Promise<ArrayBuffer> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(blob);
-  });
-};
-
 const serializeTrackForDB = async (track: any): Promise<any> => {
   const serialized = { ...track };
   
-  if (track.fileBlob && track.fileBlob instanceof Blob) {
-    try {
-      serialized.fileBuffer = await blobToArrayBuffer(track.fileBlob);
-      serialized.fileBlobType = track.fileBlob.type;
-    } catch (e) {
-      console.error("Failed to convert fileBlob to ArrayBuffer", e);
-    }
-    delete serialized.fileBlob;
-  }
-  
-  if (track.coverBlob && track.coverBlob instanceof Blob) {
-    try {
-      serialized.coverBuffer = await blobToArrayBuffer(track.coverBlob);
-      serialized.coverBlobType = track.coverBlob.type;
-    } catch (e) {
-      console.error("Failed to convert coverBlob to ArrayBuffer", e);
-    }
-    delete serialized.coverBlob;
-  }
-  
+  // Directly store Blobs in IndexedDB (native & 10x faster)
   // Strip temporary blob URLs to avoid wasting DB space and reference dead object URLs
   delete serialized.url;
   delete serialized.coverUrl;
@@ -140,12 +112,13 @@ const deserializeTrackFromDB = (serialized: any): any => {
   if (!serialized) return serialized;
   const track = { ...serialized };
   
-  if (serialized.fileBuffer) {
+  // Backward compatibility with legacy ArrayBuffer records
+  if (serialized.fileBuffer && !track.fileBlob) {
     track.fileBlob = new Blob([serialized.fileBuffer], { type: serialized.fileBlobType || 'audio/mpeg' });
     delete track.fileBuffer;
   }
   
-  if (serialized.coverBuffer) {
+  if (serialized.coverBuffer && !track.coverBlob) {
     track.coverBlob = new Blob([serialized.coverBuffer], { type: serialized.coverBlobType || 'image/jpeg' });
     delete track.coverBuffer;
   }
@@ -249,9 +222,48 @@ const getTrackFromDB = async (id: string): Promise<any> => {
   }
 };
 
+const updateTracksMetaCache = (trackList: Track[]) => {
+  try {
+    const metaList = trackList.map(t => ({
+      id: t.id,
+      name: t.name,
+      artist: t.artist,
+      duration: t.duration,
+      order: t.order,
+      isFavorite: t.isFavorite,
+      timestamps: t.timestamps,
+      sourceType: t.sourceType,
+      playCount: t.playCount,
+      listenTime: t.listenTime,
+      url: t.audioUrl || '',
+      coverUrl: t.coverUrl || UNIFORM_PLACEHOLDER
+    }));
+    localStorage.setItem('traneem_meta_cache', JSON.stringify(metaList));
+  } catch (e) {
+    console.warn("Failed to update tracks meta cache:", e);
+  }
+};
+
 const App: React.FC = () => {
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
+  const [tracks, setTracks] = useState<Track[]>(() => {
+    try {
+      const cached = localStorage.getItem('traneem_meta_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(() => {
+    try {
+      const cached = localStorage.getItem('traneem_meta_cache');
+      const list = cached ? JSON.parse(cached) : [];
+      const restoredId = localStorage.getItem('lastPlayedTrackId');
+      const idx = list.findIndex((t: any) => t.id === restoredId);
+      return idx !== -1 ? idx : (list.length > 0 ? 0 : null);
+    } catch {
+      return null;
+    }
+  });
 
   // Request storage persistence and track application usage & opens
   useEffect(() => {
@@ -807,6 +819,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
   // Handle auto-sync on mount
   useEffect(() => {
+    let timer: any;
     const checkAndInitSync = async () => {
       if (!user || isSkipLogin) return;
       try {
@@ -823,7 +836,12 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         });
       }
     };
-    checkAndInitSync();
+
+    timer = setTimeout(() => {
+      checkAndInitSync();
+    }, 1200);
+
+    return () => clearTimeout(timer);
   }, [user, isSkipLogin]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -959,6 +977,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
   useEffect(() => {
     tracksRef.current = tracks;
+    updateTracksMetaCache(tracks);
   }, [tracks]);
 
   useEffect(() => {

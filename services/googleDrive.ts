@@ -121,10 +121,22 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
         grantOfflineAccess: true
       } as any);
 
-      // If not forced interactive, try silent refresh first
+      // 1. Immediate fresh token check (0ms return if token is valid < 50 mins)
+      const storedToken = localStorage.getItem('google_access_token');
+      const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
+      const isTokenValid = storedToken && (Date.now() - acquiredAt < 50 * 60 * 1000);
+
+      if (!forceInteractive && isTokenValid && storedToken) {
+        return storedToken;
+      }
+
+      // 2. If not forced interactive and token expired, attempt fast silent refresh with 2.5s timeout
       if (!forceInteractive) {
         try {
-          const authData = (await GoogleAuth.refresh()) as any;
+          const refreshPromise = GoogleAuth.refresh() as Promise<any>;
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('RefreshTimeout')), 2500));
+          const authData: any = await Promise.race([refreshPromise, timeoutPromise]);
+          
           const refreshedToken = authData?.accessToken || authData?.authentication?.accessToken || authData?.idToken || authData?.authentication?.idToken;
           if (refreshedToken) {
             localStorage.setItem('google_access_token', refreshedToken);
@@ -132,13 +144,11 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
             return refreshedToken;
           }
         } catch (silentErr) {
-          console.warn('Silent refresh did not return token, falling back:', silentErr);
+          console.warn('Silent refresh skipped/timed out:', silentErr);
         }
 
-        // Check if stored token is still fresh (< 45 minutes)
-        const storedToken = localStorage.getItem('google_access_token');
-        const acquiredAt = parseInt(localStorage.getItem('google_token_acquired_at') || '0');
-        if (storedToken && Date.now() - acquiredAt < 45 * 60 * 1000) {
+        // Return existing stored token as best-effort if available
+        if (storedToken) {
           return storedToken;
         }
       }
