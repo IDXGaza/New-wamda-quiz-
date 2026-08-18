@@ -19,6 +19,7 @@ interface UserBadgeProps {
   onOpenBackup: (mode?: 'backup' | 'import') => void;
   onGoogleLogin: () => void;
   isLoggingIn: boolean;
+  loginError?: string | null;
   onShareApp?: () => void;
 }
 
@@ -31,6 +32,7 @@ export const UserBadge: React.FC<UserBadgeProps> = ({
   onOpenBackup,
   onGoogleLogin,
   isLoggingIn,
+  loginError,
   onShareApp
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -212,6 +214,13 @@ export const UserBadge: React.FC<UserBadgeProps> = ({
                         </p>
                       </div>
                     </div>
+
+                    {loginError && (
+                      <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-600 dark:text-rose-400 text-xs leading-relaxed flex items-start gap-2">
+                        <span className="text-sm shrink-0">⚠️</span>
+                        <span>{loginError}</span>
+                      </div>
+                    )}
 
                     <button
                       onClick={onGoogleLogin}

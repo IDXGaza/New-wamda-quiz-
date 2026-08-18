@@ -714,6 +714,16 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         }
       }
       
+      if (!finalUser && token) {
+        // Fallback user object if profile fetch was delayed
+        finalUser = {
+          displayName: 'مستخدم ترانيم',
+          email: '',
+          photoURL: '',
+          uid: 'user_' + Date.now()
+        };
+      }
+
       if (finalUser) {
         setUser(finalUser);
         localStorage.setItem('traneem_user', JSON.stringify({
@@ -1772,6 +1782,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
             }}
             onGoogleLogin={triggerGoogleLogin}
             isLoggingIn={isLoggingIn}
+            loginError={loginError}
             onShareApp={handleShare}
           />
         </div>

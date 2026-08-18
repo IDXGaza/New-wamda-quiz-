@@ -69,23 +69,29 @@ const requestGoogleTokenViaGIS = (): Promise<string> => {
           localStorage.setItem('google_token_acquired_at', Date.now().toString());
 
           // Fetch user profile info
+          let traneemUser = {
+            displayName: 'مستخدم ترانيم',
+            email: '',
+            photoURL: '',
+            uid: 'user_' + Date.now()
+          };
           try {
             const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
               headers: { Authorization: `Bearer ${accessToken}` }
             });
             if (userRes.ok) {
               const userInfo = await userRes.json();
-              const traneemUser = {
+              traneemUser = {
                 displayName: userInfo.name || 'مستخدم ترانيم',
                 email: userInfo.email || '',
                 photoURL: userInfo.picture || '',
                 uid: userInfo.sub || ('user_' + Date.now())
               };
-              localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
             }
           } catch (profileErr) {
             console.warn('Could not fetch user profile info:', profileErr);
           }
+          localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
 
           resolve(accessToken);
         },
@@ -110,15 +116,16 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
       await GoogleAuth.initialize({
         clientId: GOOGLE_CLIENT_ID,
-        scopes: ['https://www.googleapis.com/auth/drive.appdata'],
-        grantOfflineAccess: false
+        serverClientId: GOOGLE_CLIENT_ID,
+        scopes: ['https://www.googleapis.com/auth/drive.appdata', 'email', 'profile', 'openid'],
+        grantOfflineAccess: true
       } as any);
 
       // If not forced interactive, try silent refresh first
       if (!forceInteractive) {
         try {
-          const authData = await GoogleAuth.refresh();
-          const refreshedToken = authData?.accessToken || authData?.idToken;
+          const authData = (await GoogleAuth.refresh()) as any;
+          const refreshedToken = authData?.accessToken || authData?.authentication?.accessToken || authData?.idToken || authData?.authentication?.idToken;
           if (refreshedToken) {
             localStorage.setItem('google_access_token', refreshedToken);
             localStorage.setItem('google_token_acquired_at', Date.now().toString());
@@ -136,9 +143,32 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
         }
       }
 
-      const user = await GoogleAuth.signIn() as any;
-      const accessToken = user?.authentication?.accessToken || user?.authentication?.idToken;
-      if (!accessToken) throw new Error('فشل استلام رمز المصادقة من جوجل');
+      let user: any = null;
+      try {
+        user = await GoogleAuth.signIn() as any;
+      } catch (nativeSignErr: any) {
+        console.warn('Native GoogleAuth.signIn failed, attempting GIS / Web fallback:', nativeSignErr);
+        // Fallback to Google Identity Services / Web popup
+        try {
+          const webToken = await requestGoogleTokenViaGIS();
+          if (webToken) return webToken;
+        } catch (webFallbackErr) {
+          console.warn('Web fallback also failed:', webFallbackErr);
+        }
+        throw nativeSignErr;
+      }
+
+      const accessToken = user?.authentication?.accessToken || user?.accessToken || user?.authentication?.idToken || user?.idToken;
+      if (!accessToken) {
+        // Try fallback if token is missing from native response
+        try {
+          const webToken = await requestGoogleTokenViaGIS();
+          if (webToken) return webToken;
+        } catch (e) {
+          console.warn('Fallback after empty token failed:', e);
+        }
+        throw new Error('لم يتم استلام رمز مصادقة Google من النظام.');
+      }
       
       localStorage.setItem('google_access_token', accessToken);
       localStorage.setItem('google_token_acquired_at', Date.now().toString());
@@ -156,7 +186,7 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
         try {
           const { auth } = await import('../firebase');
           const { GoogleAuthProvider, signInWithCredential } = await import('firebase/auth');
-          const idToken = user?.authentication?.idToken;
+          const idToken = user?.authentication?.idToken || user?.idToken;
           if (idToken) {
             const cred = GoogleAuthProvider.credential(idToken, accessToken);
             await signInWithCredential(auth, cred);
@@ -174,7 +204,7 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       
       let msg = '';
       if (errCode === '10' || rawMsg.includes('10')) {
-        msg = 'كود (10 - DEVELOPER_ERROR): عدم تطابق بصمة SHA-1 أو إعدادات Google Cloud للمشروع.';
+        msg = 'كود (10 - DEVELOPER_ERROR): عدم تطابق بصمة SHA-1 أو اسم الحزمة مع Google Cloud.';
       } else if (errCode === '12500' || rawMsg.includes('12500')) {
         msg = 'كود (12500 - SIGN_IN_FAILED): يرجى مراجعة إعدادات شاشة OAuth أو حسابك.';
       } else if (errCode === '7' || rawMsg.includes('7')) {
