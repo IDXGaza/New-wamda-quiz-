@@ -145,12 +145,25 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
 
       if (user) {
         const traneemUser = {
-          displayName: user.displayName || (user.givenName + " " + user.familyName) || 'مستخدم ترانيم',
+          displayName: user.displayName || (user.givenName ? `${user.givenName} ${user.familyName || ''}`.trim() : '') || user.name || 'مستخدم ترانيم',
           email: user.email || '',
-          photoURL: user.imageUrl || '',
-          uid: user.id || ''
+          photoURL: user.imageUrl || user.photoUrl || '',
+          uid: user.id || user.userId || ('user_' + Date.now())
         };
         localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
+
+        // Optionally link with Firebase Auth
+        try {
+          const { auth } = await import('../firebase');
+          const { GoogleAuthProvider, signInWithCredential } = await import('firebase/auth');
+          const idToken = user?.authentication?.idToken;
+          if (idToken) {
+            const cred = GoogleAuthProvider.credential(idToken, accessToken);
+            await signInWithCredential(auth, cred);
+          }
+        } catch (fbErr) {
+          console.warn('Firebase sign-in link skipped or failed:', fbErr);
+        }
       }
       
       return accessToken;

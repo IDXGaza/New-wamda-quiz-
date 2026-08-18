@@ -633,16 +633,13 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
     return onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         const traneemUser = {
-          displayName: currentUser.displayName,
-          email: currentUser.email,
-          photoURL: currentUser.photoURL,
+          displayName: currentUser.displayName || 'مستخدم ترانيم',
+          email: currentUser.email || '',
+          photoURL: currentUser.photoURL || '',
           uid: currentUser.uid
         };
         setUser(currentUser);
         localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
-      } else {
-        localStorage.removeItem('traneem_user');
-        setUser(null);
       }
     });
   }, []);
@@ -715,26 +712,15 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
             console.error("Failed to parse cached user:", e);
           }
         }
-        
-        if (!finalUser && Capacitor.isNativePlatform()) {
-          const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
-          const userResult = await GoogleAuth.signIn() as any;
-          finalUser = {
-            displayName: userResult.displayName || (userResult.givenName + " " + userResult.familyName) || 'مستخدم ترانيم',
-            email: userResult.email || '',
-            photoURL: userResult.imageUrl || '',
-            uid: userResult.id || ''
-          };
-        }
       }
       
       if (finalUser) {
         setUser(finalUser);
         localStorage.setItem('traneem_user', JSON.stringify({
-          displayName: finalUser.displayName,
-          email: finalUser.email,
-          photoURL: finalUser.photoURL,
-          uid: finalUser.uid
+          displayName: finalUser.displayName || 'مستخدم ترانيم',
+          email: finalUser.email || '',
+          photoURL: finalUser.photoURL || '',
+          uid: finalUser.uid || ''
         }));
       }
       
