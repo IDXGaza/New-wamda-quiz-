@@ -5,9 +5,10 @@ interface LoginScreenProps {
   onLogin: () => void;
   isLoading: boolean;
   onSkip?: () => void; // Optional skip button for users who wish to stay offline
+  errorMessage?: string | null;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isLoading, onSkip }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isLoading, onSkip, errorMessage }) => {
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-slate-950 text-white overflow-hidden font-cairo select-none px-6">
       {/* Decorative Background Elements */}
@@ -43,9 +44,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isLoading, on
         <h1 id="login_title" className="text-3xl font-bold tracking-tight text-white mb-3">
           ترانيم <span className="text-[#4da8ab]">سحابي</span>
         </h1>
-        <p className="text-slate-400 text-sm font-light mb-8 max-w-sm leading-relaxed">
-          سجل دخولك مرة واحدة بحساب Google لتستمتع بمزامنة أناشيدك ومفضلاتك وعلاماتك تلقائياً وبأمان تام على السحابة، بأسلوب SoundCloud الذكي والمبتكر.
+        <p className="text-slate-400 text-sm font-light mb-6 max-w-sm leading-relaxed">
+          سجل دخولك مرة واحدة بحساب Google لمزامنة أناشيدك ومفضلاتك وتخزين نسخك الاحتياطية على السحابة بأمان.
         </p>
+
+        {/* Error notification if any */}
+        {errorMessage && (
+          <div className="w-full mb-5 p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-300 text-xs text-right leading-relaxed flex items-start gap-2.5">
+            <span className="text-base shrink-0">⚠️</span>
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
         {/* Button Stack */}
         <div className="w-full space-y-3">
@@ -68,7 +77,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isLoading, on
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
               </svg>
             )}
-            <span className="text-base font-semibold">تفعيل السحابة بحساب Google</span>
+            <span className="text-base font-semibold">{isLoading ? 'جاري فتح نافذة Google...' : 'تسجيل الدخول بحساب Google'}</span>
           </button>
 
           {onSkip && (
@@ -76,9 +85,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, isLoading, on
               id="skip_login_btn"
               onClick={onSkip}
               disabled={isLoading}
-              className="w-full text-slate-500 hover:text-slate-300 font-medium py-3 px-6 rounded-2xl transition-all duration-300 text-sm"
+              className="w-full text-slate-400 hover:text-slate-200 font-medium py-3 px-6 rounded-2xl transition-all duration-300 text-xs sm:text-sm border border-slate-800/80 bg-slate-900/40"
             >
-              المتابعة بدون مزامنة سحابية (حفظ محلي)
+              المتابعة بدون مزامنة سحابية (حفظ محلي فقط)
             </button>
           )}
         </div>

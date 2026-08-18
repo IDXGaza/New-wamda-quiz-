@@ -310,6 +310,7 @@ const App: React.FC = () => {
   });
   const syncDebounceRef = useRef<any>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [backupModalMode, setBackupModalMode] = useState<'backup' | 'import' | null>(null);
   const [isBackupProcessing, setIsBackupProcessing] = useState(false);
@@ -694,12 +695,15 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
 
   const triggerGoogleLogin = async () => {
     setIsLoggingIn(true);
+    setLoginError(null);
     try {
       const token = await getAccessToken(true);
-      localStorage.setItem('google_access_token', token);
-      localStorage.setItem('google_token_acquired_at', Date.now().toString());
-      localStorage.removeItem('skip_cloud_sync');
-      setIsSkipLogin(false);
+      if (token) {
+        localStorage.setItem('google_access_token', token);
+        localStorage.setItem('google_token_acquired_at', Date.now().toString());
+        localStorage.removeItem('skip_cloud_sync');
+        setIsSkipLogin(false);
+      }
       
       let finalUser: any = auth.currentUser;
       if (!finalUser) {
@@ -739,7 +743,8 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
       }
     } catch (error: any) {
       console.error("Login failed:", error);
-      alert("فشل تسجيل الدخول: " + (error?.message || error));
+      const msg = error?.message || String(error);
+      setLoginError(msg);
     } finally {
       setIsLoggingIn(false);
     }
@@ -2024,6 +2029,7 @@ const compressImageBlob = (blob: Blob, maxDim: number = 250, quality: number = 0
         <LoginScreen
           onLogin={triggerGoogleLogin}
           isLoading={isLoggingIn}
+          errorMessage={loginError}
           onSkip={() => {
             setIsSkipLogin(true);
             localStorage.setItem('skip_cloud_sync', 'true');

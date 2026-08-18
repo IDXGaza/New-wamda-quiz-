@@ -7,13 +7,109 @@ export interface DriveBackupFile {
   createdTime: string;
 }
 
-// Modern Authentication with Native GoogleAuth on Android and Firebase Auth on Web
+const GOOGLE_CLIENT_ID = '911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com';
+const REQUIRED_SCOPES = [
+  'https://www.googleapis.com/auth/drive.appdata',
+  'email',
+  'profile',
+  'openid'
+];
+
+const loadGsiScript = (): Promise<void> => {
+  return new Promise((resolve) => {
+    if ((window as any).google?.accounts?.oauth2) {
+      return resolve();
+    }
+    const existing = document.getElementById('gsi-client-script');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => resolve());
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'gsi-client-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
+};
+
+const requestGoogleTokenViaGIS = (): Promise<string> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      await loadGsiScript();
+      const google = (window as any).google;
+      if (!google?.accounts?.oauth2?.initTokenClient) {
+        return reject(new Error('GIS_UNAVAILABLE'));
+      }
+
+      let resolved = false;
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: REQUIRED_SCOPES.join(' '),
+        callback: async (response: any) => {
+          if (resolved) return;
+          resolved = true;
+
+          if (response.error) {
+            if (response.error === 'popup_closed_by_user' || response.error === 'access_denied') {
+              return reject(new Error('تم إغلاق نافذة تسجيل الدخول قبل إكمال العملية'));
+            }
+            return reject(new Error(response.error_description || response.error || 'تم إلغاء المصادقة'));
+          }
+          if (!response.access_token) {
+            return reject(new Error('لم يتم استلام رمز الوصول من Google'));
+          }
+
+          const accessToken = response.access_token;
+          localStorage.setItem('google_access_token', accessToken);
+          localStorage.setItem('google_token_acquired_at', Date.now().toString());
+
+          // Fetch user profile info
+          try {
+            const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (userRes.ok) {
+              const userInfo = await userRes.json();
+              const traneemUser = {
+                displayName: userInfo.name || 'مستخدم ترانيم',
+                email: userInfo.email || '',
+                photoURL: userInfo.picture || '',
+                uid: userInfo.sub || ('user_' + Date.now())
+              };
+              localStorage.setItem('traneem_user', JSON.stringify(traneemUser));
+            }
+          } catch (profileErr) {
+            console.warn('Could not fetch user profile info:', profileErr);
+          }
+
+          resolve(accessToken);
+        },
+        error_callback: (err: any) => {
+          if (resolved) return;
+          resolved = true;
+          reject(new Error(err?.message || 'فشل فتح نافذة تسجيل الدخول'));
+        }
+      });
+
+      client.requestAccessToken({ prompt: 'select_account' });
+    } catch (e) {
+      reject(e);
+    }
+  });
+};
+
+// Modern Authentication with Native GoogleAuth on Android and GIS / Firebase Auth on Web
 export const getAccessToken = async (forceInteractive: boolean = false): Promise<string> => {
   if (Capacitor.isNativePlatform()) {
     try {
       const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth');
       await GoogleAuth.initialize({
-        clientId: '911335724064-2fsqm3qlsciugqe7tri6vk33814uuerq.apps.googleusercontent.com',
+        clientId: GOOGLE_CLIENT_ID,
         scopes: ['https://www.googleapis.com/auth/drive.appdata'],
         grantOfflineAccess: false
       } as any);
@@ -92,9 +188,23 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       throw new Error('ExpiredToken');
     }
 
+    // Try Google Identity Services first
+    try {
+      const gisToken = await requestGoogleTokenViaGIS();
+      if (gisToken) {
+        return gisToken;
+      }
+    } catch (gisErr: any) {
+      console.warn('GIS attempt error, trying Firebase popup fallback:', gisErr);
+      if (gisErr?.message?.includes('تم إغلاق نافذة')) {
+        throw gisErr;
+      }
+    }
+
+    // Secondary fallback: Firebase Auth Popup
     try {
       const { auth } = await import('../firebase');
-      const { signInWithPopup, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth');
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
       
       const provider = new GoogleAuthProvider();
       provider.addScope('https://www.googleapis.com/auth/drive.appdata');
@@ -102,27 +212,7 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
         prompt: 'select_account'
       });
       
-      let result;
-      try {
-        result = await signInWithPopup(auth, provider);
-      } catch (popupErr: any) {
-        console.warn('Popup attempt result/fallback to redirect:', popupErr);
-        const errCode = popupErr?.code || '';
-        // Try redirect if popup failed, closed or blocked
-        if (
-          errCode === 'auth/popup-blocked' || 
-          errCode === 'auth/cancelled-popup-request' || 
-          errCode === 'auth/popup-closed-by-user' ||
-          errCode === 'auth/internal-error' ||
-          errCode.includes('popup')
-        ) {
-          console.warn('Opening Google Sign-In via full browser redirect...');
-          await signInWithRedirect(auth, provider);
-          return '';
-        }
-        throw popupErr;
-      }
-
+      const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const accessToken = credential?.accessToken;
       
@@ -144,11 +234,11 @@ export const getAccessToken = async (forceInteractive: boolean = false): Promise
       } else if (errorCode === 'auth/popup-closed-by-user' || errorMsg.includes('popup-closed-by-user')) {
         friendlyMsg = 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية.';
       } else if (errorCode === 'auth/popup-blocked' || errorMsg.includes('popup-blocked')) {
-        friendlyMsg = 'تم حظر نافذة تسجيل الدخول المنبثقة من قبل المتصفح.';
+        friendlyMsg = 'تم حظر نافذة تسجيل الدخول المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة وحاول مجدداً.';
       } else if (errorCode === 'auth/unauthorized-domain' || errorMsg.includes('unauthorized-domain')) {
-        friendlyMsg = 'النطاق الحالي غير مصرح له في إعدادات Firebase Auth. يرجى إضافة النطاق إلى Authorized Domains.';
+        friendlyMsg = 'النطاق الحالي غير مصرح له في إعدادات Firebase Auth.';
       } else {
-        friendlyMsg = errorMsg || errorCode || 'خطأ غير معروف في المصادقة.';
+        friendlyMsg = errorMsg || errorCode || 'حدث خطأ أثناء المصادقة.';
       }
       throw new Error(`فشل تسجيل الدخول: ${friendlyMsg}`);
     }
